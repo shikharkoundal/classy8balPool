@@ -6,8 +6,10 @@ import { sprites } from "../Assets.js";
 export const BALL_DIAMETER = 50;
 export const BALL_RADIUS = BALL_DIAMETER / 2;
 
-const FRICTION = 0.99;
-const STOP_T = 0.02;
+// friction model: FRIC_PER_SEC is multiplicative per second.
+// We'll apply it once per frame (scaled by dt)
+const FRIC_PER_SEC = 0.995; // <--- tune this (closer to 1 = less friction)
+const STOP_T = .5;            // velocity magnitude under which we stop
 
 export default class Ball {
     constructor(position, sprite = sprites.ball) {
@@ -24,61 +26,69 @@ export default class Ball {
     }
 
     shoot(power, angle) {
-        const speed = power * 0.3; // tune speed scale
+        // tuned scale: change if needed
+        const speed = power * 0.5;
         this.velocity.x = Math.cos(angle) * speed;
         this.velocity.y = Math.sin(angle) * speed;
         this.moving = true;
+        console.log("SHOOT SPEED:", this.velocity);
     }
 
-    update(dt, world) {
-        if (!this.moving || this.inHole) return;
+    // move by dt (no friction here). returns nothing.
+    integratePosition(dt) {
+        // simple Euler step
+        this.position.x += this.velocity.x * dt;
+        this.position.y += this.velocity.y * dt;
+    }
 
-        let nx = this.position.x + this.velocity.x * dt;
-        let ny = this.position.y + this.velocity.y * dt;
+    // border collision (in-place) — resolves position and reflects velocity
+    borderBounce(policy) {
+        const l = policy.leftBorderX + this.radius;
+        const r = policy.rightBorderX - this.radius;
+        const t = policy.topBorderY + this.radius;
+        const b = policy.bottomBorderY - this.radius;
 
-        const policy = world && world.policy ? world.policy : {
-            leftBorderX: 20,
-            rightBorderX: 1480,
-            topBorderY: 20,
-            bottomBorderY: 800
-        };
-
-        // --- BORDERS ---
-        if (nx < policy.leftBorderX + this.radius) {
-            nx = policy.leftBorderX + this.radius;
+        if (this.position.x < l) {
+            this.position.x = l;
             this.velocity.x *= -1;
-        } else if (nx > policy.rightBorderX - this.radius) {
-            nx = policy.rightBorderX - this.radius;
+            this.moving = true;
+        } else if (this.position.x > r) {
+            this.position.x = r;
             this.velocity.x *= -1;
+            this.moving = true;
         }
 
-        if (ny < policy.topBorderY + this.radius) {
-            ny = policy.topBorderY + this.radius;
+        if (this.position.y < t) {
+            this.position.y = t;
             this.velocity.y *= -1;
-        } else if (ny > policy.bottomBorderY - this.radius) {
-            ny = policy.bottomBorderY - this.radius;
+            this.moving = true;
+        } else if (this.position.y > b) {
+            this.position.y = b;
             this.velocity.y *= -1;
+            this.moving = true;
         }
+    }
 
-        this.position.x = nx;
-        this.position.y = ny;
+    // apply friction scaled by dt (apply once per frame after all substeps)
+    applyFrictionScaled(dt) {
+        if (this.inHole) return;
+        // scale per-second friction to this dt: factor = FRIC_PER_SEC^(dt)
+        const factor = Math.pow(FRIC_PER_SEC, dt * 60); // 60 is arbitrary baseline to make tuning intuitive
+        this.velocity.multiplyWith(factor);
 
-        // --- FRICTION ---
-        this.velocity.multiplyWith(FRICTION);
-
-        // --- STOP CHECK ---
-        if (
-            Math.abs(this.velocity.x) < STOP_T &&
-            Math.abs(this.velocity.y) < STOP_T
-        ) {
+        // stop threshold (magnitude)
+        const speedSq = this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y;
+        if (speedSq < STOP_T * STOP_T) {
             this.velocity.x = 0;
             this.velocity.y = 0;
             this.moving = false;
+        } else {
+            this.moving = true;
         }
     }
 
     draw() {
-        if (this.visible)
-            Canvas2D.drawImage(this.sprite, this.position, 0, 1, this.origin);
+        if (!this.visible) return;
+        Canvas2D.drawImage(this.sprite, this.position, 0, 1, this.origin);
     }
 }
