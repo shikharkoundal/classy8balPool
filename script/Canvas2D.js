@@ -1,86 +1,38 @@
 // script/Canvas2D.js
-import Vector2 from './geom/Vector2.js';
+export default class Canvas2D {
+    static canvas = null;
+    static _ctx = null;   // <--- IMPORTANT: your whole project expects _ctx !!!
 
-class Canvas2D {
-  constructor() {
-    this._canvas = null;
-    this._ctx = null;
-    this._div = null;
-    this._gameSize = new Vector2(1500, 825);
-    this._offset = new Vector2(0,0);
-  }
+    static initialize(divId, canvasId) {
+        this.canvas = document.getElementById(canvasId);
 
-  setGameSize(sizeVector) {
-    if (!sizeVector || !sizeVector.x) throw new Error('setGameSize expects Vector2');
-    this._gameSize = sizeVector.clone();
-  }
+        if (!this.canvas) {
+            console.error("Canvas not found:", canvasId);
+            return;
+        }
 
-  initialize(divName, canvasName) {
-    this._canvas = document.getElementById(canvasName);
-    this._div = document.getElementById(divName);
-    if (!this._canvas) throw new Error('Canvas element not found: ' + canvasName);
-    const ctx = this._canvas.getContext('2d');
-    if (!ctx) throw new Error('2D context not supported');
-    this._ctx = ctx;
-    window.addEventListener('resize', () => this.resize());
-    this.resize();
-  }
+        this._ctx = this.canvas.getContext("2d");
+    }
 
-  resize() {
-    if (!this._canvas || !this._div) return;
-    const widthToHeight = this._gameSize.x / this._gameSize.y;
-    let newWidth = window.innerWidth;
-    let newHeight = window.innerHeight;
-    const newWidthToHeight = newWidth / newHeight;
-    if (newWidthToHeight > widthToHeight) newWidth = newHeight * widthToHeight;
-    else newHeight = newWidth / widthToHeight;
-    this._div.style.width = newWidth + 'px';
-    this._div.style.height = newHeight + 'px';
-    this._div.style.marginTop = ((window.innerHeight - newHeight) / 2) + 'px';
-    this._canvas.width = newWidth;
-    this._canvas.height = newHeight;
+    static setGameSize(size) {
+        if (!this.canvas) return;
+        this.canvas.width  = size.x;
+        this.canvas.height = size.y;
+    }
 
-    // calculate canvas offset for mouse mapping
-    const rect = this._canvas.getBoundingClientRect();
-    this._offset.x = rect.left;
-    this._offset.y = rect.top;
-  }
+    static clear() {
+        if (!this._ctx) return;
+        this._ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
 
-  get scale() {
-    return new Vector2(this._canvas.width / this._gameSize.x, this._canvas.height / this._gameSize.y);
-  }
+    static drawImage(img, pos, rotation = 0, scale = 1, origin = {x:0, y:0}) {
+        if (!this._ctx) return;
 
-  clear() {
-    this._ctx.clearRect(0,0,this._canvas.width,this._canvas.height);
-  }
-
-  setCursor(cursor) {
-    if (this._canvas) this._canvas.style.cursor = cursor;
-  }
-
-  drawImage(sprite, position = Vector2.zero, rotation = 0, scale = 1, origin = Vector2.zero) {
-    if (!sprite) return;
-    const sc = this.scale;
-    this._ctx.save();
-    this._ctx.scale(sc.x, sc.y);
-    this._ctx.translate(position.x, position.y);
-    this._ctx.rotate(rotation);
-    this._ctx.drawImage(sprite, 0, 0, sprite.width, sprite.height, -origin.x * scale, -origin.y * scale, sprite.width * scale, sprite.height * scale);
-    this._ctx.restore();
-  }
-
-  drawText(text, position = Vector2.zero, origin = Vector2.zero, color = '#000', textAlign = 'left', fontname = 'sans-serif', fontsize = '20px') {
-    const sc = this.scale;
-    this._ctx.save();
-    this._ctx.scale(sc.x, sc.y);
-    this._ctx.translate(position.x - origin.x, position.y - origin.y);
-    this._ctx.textBaseline = 'top';
-    this._ctx.font = `${fontsize} ${fontname}`;
-    this._ctx.fillStyle = color;
-    this._ctx.textAlign = textAlign;
-    this._ctx.fillText(text, 0, 0);
-    this._ctx.restore();
-  }
+        this._ctx.save();
+        this._ctx.translate(pos.x, pos.y);
+        this._ctx.rotate(rotation);
+        this._ctx.scale(scale, scale);
+        this._ctx.drawImage(img, -origin.x, -origin.y);
+        this._ctx.restore();
+    }
 }
-
-export default new Canvas2D();

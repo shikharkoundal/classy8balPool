@@ -1,4 +1,3 @@
-// script/menu/Button.js
 import Canvas2D from "../Canvas2D.js";
 import Mouse from "../input/Mouse.js";
 
@@ -23,12 +22,7 @@ export default class Button {
     }
 
     draw() {
-        const ctx = Canvas2D._ctx;
-        if (!ctx) return;
-
         const img = this.isHovered() ? this.hoverSprite : this.sprite;
-        if (!img) return;
-
         Canvas2D.drawImage(img, this.position);
     }
 

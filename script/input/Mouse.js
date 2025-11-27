@@ -1,54 +1,63 @@
 // script/input/Mouse.js
-// returns positions in game coordinates (Canvas2D scale-aware)
 
-import Canvas2D from "../Canvas2D.js";
-import Vector2 from "../geom/Vector2.js";
-import ButtonState from "./ButtonState.js";
+class MouseInput {
+    constructor() {
+        this.position = { x: 0, y: 0 };
+        this.left = { pressed: false, released: false };
+        this.canvas = null;
+        this.gsm = null; // <-- ADD THIS
+    }
 
-const position = new Vector2(0,0);
-const left = new ButtonState();
-const right = new ButtonState();
+    // We pass gsm when attaching mouse
+    attach(canvas, gsm) {
+        this.canvas = canvas;
+        this.gsm = gsm;
 
-function _getCanvasRelativePosition(e) {
-  const canvas = Canvas2D._canvas;
-  if (!canvas) return { x: e.clientX, y: e.clientY };
+        // -----------------------
+        // MOUSE MOVE
+        // -----------------------
+        canvas.addEventListener("mousemove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            this.position.x = e.clientX - rect.left;
+            this.position.y = e.clientY - rect.top;
 
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+            // forward to GSM
+            if (this.gsm && this.gsm.handleMouseMove)
+                this.gsm.handleMouseMove(this.position.x, this.position.y);
+        });
 
-  const sc = Canvas2D.scale;
-  if (sc && sc.x !== 0 && sc.y !== 0) {
-    return { x: x / sc.x, y: y / sc.y };
-  }
-  return { x, y };
+        // -----------------------
+        // MOUSE DOWN
+        // -----------------------
+        canvas.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return; // only left click
+
+            this.left.pressed = true;
+            this.left.released = false;
+
+            if (this.gsm && this.gsm.handleMouseDown)
+                this.gsm.handleMouseDown();
+        });
+
+        // -----------------------
+        // MOUSE UP
+        // -----------------------
+        canvas.addEventListener("mouseup", (e) => {
+            if (e.button !== 0) return;
+
+            this.left.pressed = false;
+            this.left.released = true;
+
+            if (this.gsm && this.gsm.handleMouseUp)
+                this.gsm.handleMouseUp();
+        });
+    }
+
+    // Reset release flag each frame
+    resetFrameState() {
+        this.left.released = false;
+    }
 }
 
-window.addEventListener('mousemove', (e) => {
-  const p = _getCanvasRelativePosition(e);
-  position.x = p.x;
-  position.y = p.y;
-});
-
-window.addEventListener('mousedown', (e) => {
-  if (e.button === 0) left.setDown(true);
-  if (e.button === 2) right.setDown(true);
-});
-
-window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) left.setDown(false);
-  if (e.button === 2) right.setDown(false);
-});
-
-// prevent context menu on right click
-window.addEventListener('contextmenu', (e) => e.preventDefault());
-
-export default {
-  position,
-  left,
-  right,
-  reset() {
-    left.resetTick();
-    right.resetTick();
-  }
-};
+const Mouse = new MouseInput();
+export default Mouse;

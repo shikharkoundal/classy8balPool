@@ -8,8 +8,8 @@ export const BALL_RADIUS = BALL_DIAMETER / 2;
 
 // friction model: FRIC_PER_SEC is multiplicative per second.
 // We'll apply it once per frame (scaled by dt)
-const FRIC_PER_SEC = 0.995; // <--- tune this (closer to 1 = less friction)
-const STOP_T = .5;            // velocity magnitude under which we stop
+const FRIC_PER_SEC = 0.97; // <--- tune this (closer to 1 = less friction)
+const STOP_T = 1;            // velocity magnitude under which we stop
 
 export default class Ball {
     constructor(position, sprite = sprites.ball) {

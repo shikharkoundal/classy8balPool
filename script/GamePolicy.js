@@ -9,7 +9,7 @@ export default class GamePolicy {
         this.leftBorderX = 50;
         this.rightBorderX = 1455;
         this.topBorderY = 50;
-        this.bottomBorderY = 780;
+        this.bottomBorderY = 775;
 
         // Pocket positions (center points)
         this.holes = [
@@ -38,18 +38,33 @@ export default class GamePolicy {
         return false;
     }
 
+    isBallInPocket(ball) {
+    if (ball.inHole) return false;
+
+    for (const h of this.holes) {
+        const dx = ball.position.x - h.x;
+        const dy = ball.position.y - h.y;
+
+        if (dx*dx + dy*dy <= this.holeRadius * this.holeRadius) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
     //-------------------------------------------------------
     // HANDLE BALL DROPPING INTO POCKET
     //-------------------------------------------------------
+  // script/GamePolicy.js (inside handleBallInHole)
     handleBallInHole(ball) {
-        // Simple version — make this customizable later
-        console.log("Ball pocketed:", ball.color);
-
-        // White ball → foul → respawn later
-        if (ball.color === "white") {
-            // you can add real foul logic later
-            ball.visible = false;
-            ball.moving = false;
-        }
+        console.log("Ball pocketed:", ball);
+        ball.inHole = true;
+        ball.visible = false;
+        ball.moving = false;
+        ball.velocity.x = 0;
+        ball.velocity.y = 0;
+        // TODO: if white -> respawn logic; if object ball -> remove from table list
     }
+
 }
