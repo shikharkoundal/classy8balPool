@@ -1,5 +1,4 @@
 // script/states/GameplayState.js
-
 import Ball from "../game_objects/Ball.js";
 import Vector2 from "../geom/Vector2.js";
 import GamePolicy from "../GamePolicy.js";
@@ -26,6 +25,12 @@ export default class GameplayState {
         this.shotTaken = false;
 
         this.invalidPlacementFlash = 0;
+
+        this.scoreRed = 0;
+        this.scoreYellow = 0;
+
+        this.totalRed = 7;
+        this.totalYellow = 7;
     }
 
     // ------------------------------------------------
@@ -47,6 +52,16 @@ export default class GameplayState {
         return true;
     }
 
+    // ..........................................
+    // helper
+    // .............................................
+    getBallColor(ball) {
+        if (ball.sprite === sprites.spr_red) return "red";
+        if (ball.sprite === sprites.spr_yellow) return "yellow";
+        if (ball.sprite === sprites.spr_black) return "black";
+        return "cue";
+    }
+
     // ------------------------------------------------
     // MOUSE MOVE
     // ------------------------------------------------
@@ -62,6 +77,7 @@ export default class GameplayState {
                 this.cueBall.position.x = newX;
                 this.cueBall.position.y = newY;
             } else {
+                // small visual feedback
                 this.invalidPlacementFlash = 5;
             }
             return;
@@ -146,6 +162,14 @@ export default class GameplayState {
                 )
             );
         }
+
+        // reset scores / states
+        this.scoreRed = 0;
+        this.scoreYellow = 0;
+        this.ballInHand = false;
+        this.readyForShot = true;
+        this.shotTaken = false;
+        this.invalidPlacementFlash = 0;
     }
 
     // ------------------------------------------------
@@ -190,22 +214,22 @@ export default class GameplayState {
                 const t = b.pocketAnim.timer / b.pocketAnim.duration;
 
                 if (t >= 1) {
-                    // Remove permanently
+                    // mark for removal
                     b.removeMe = true;
                     continue;
                 }
 
-                // Smooth motion
+                // Smooth motion towards pocket
                 b.position.x += (b.pocketAnim.targetX - b.position.x) * 0.1;
                 b.position.y += (b.pocketAnim.targetY - b.position.y) * 0.1;
 
                 // Shrink effect
                 b.scale = 1 - t;
 
-                continue; // skip physics
+                continue; // skip physics for animating ball
             }
 
-            // Skip pocketed balls
+            // Skip pocketed/in-hole balls
             if (b.inHole) continue;
 
             // Regular physics
@@ -213,25 +237,45 @@ export default class GameplayState {
             b.applyFrictionScaled(dt);
             b.borderBounce(this.policy);
 
-            // Check pocket entry
+            // ---------------------------------------------------
+            //  POCKET ENTRY HANDLING
+            // ---------------------------------------------------
             if (this.policy.isBallInPocket(b)) {
 
+                const color = this.getBallColor(b);
+
+                // ------------------------------------------
+                // CUE BALL → Ball in hand
+                // ------------------------------------------
                 if (b === this.cueBall) {
-                    // Cue ball -> ball in hand
                     this.ballInHand = true;
-                    b.velocity.x = b.velocity.y = 0;
+                    b.moving = false;
+                    b.visible = true;
                     b.inHole = false;
+                    b.velocity.x = b.velocity.y = 0;
                     continue;
                 }
 
-                // START POCKET ANIMATION
+                // ------------------------------------------
+                // SCORING FOR RED/YELLOW BALLS
+                // ------------------------------------------
+                if (color === "red")   this.scoreRed++;
+                if (color === "yellow") this.scoreYellow++;
+
+                // ------------------------------------------
+                // Start pocket animation (falling in)
+                // ------------------------------------------
                 b.isAnimating = true;
                 b.pocketAnim = {
                     timer: 0,
                     duration: 0.5,
                     targetX: this.policy.lastPocketX,
-                    targetY: this.policy.lastPocketY
+                    targetY: this.policy.lastPocketY,
                 };
+
+                b.inHole = true;   // stop physics but continue animating
+                b.visible = true;  // remain visible while animating
+                b.scale = 1;
 
                 continue;
             }
@@ -240,14 +284,12 @@ export default class GameplayState {
         // Remove animated finished balls
         this.balls = this.balls.filter(b => !b.removeMe);
 
-        // Collisions among active balls
+        // Collisions among active balls (exclude inHole and animating)
         const active = this.balls.filter(b => !b.inHole && !b.isAnimating);
-
         if (active.length > 1) collideAllBalls(active);
 
-        // Determine shot completion
+        // Determine shot completion (ignore animating/inHole)
         const anyMoving = this.balls.some(b => b.moving && !b.inHole && !b.isAnimating);
-
         this.readyForShot = !anyMoving;
     }
 
@@ -258,13 +300,22 @@ export default class GameplayState {
         Canvas2D.clear();
         Canvas2D.drawImage(sprites.background, new Vector2(0, 0));
 
+        // Draw balls. For animating balls apply scale shrink; otherwise call standard draw.
         for (const b of this.balls) {
-            if (b.visible !== false) b.draw();
+            if (b.visible === false) continue;
+
+            if (b.isAnimating && typeof b.scale === "number") {
+                // draw with scale and center origin
+                const scale = Math.max(0.01, b.scale);
+                const origin = new Vector2(b.radius, b.radius);
+                Canvas2D.drawImage(b.sprite, b.position, 0, scale, origin);
+            } else {
+                b.draw();
+            }
         }
 
-        // Stick
+        // Draw cue stick when ready
         if (!this.cueBall.moving && !this.cueBall.inHole && !this.ballInHand) {
-
             const TIP_OFFSET_X = -10;
             const TIP_OFFSET_Y = 0;
             const stickDist = 15 + (this.power / this.maxPower) * 60;
@@ -314,5 +365,14 @@ export default class GameplayState {
             ctx.stroke();
             this.invalidPlacementFlash--;
         }
+
+        // ------------------------------
+        // SCORE DISPLAY
+        // ------------------------------
+        const ctx = Canvas2D._ctx;
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText(`Red: ${this.scoreRed} / ${this.totalRed}`, 50, 40);
+        ctx.fillText(`Yellow: ${this.scoreYellow} / ${this.totalYellow}`, 50, 70);
     }
 }
