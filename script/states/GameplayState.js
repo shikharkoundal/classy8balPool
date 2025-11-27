@@ -25,261 +25,252 @@ export default class GameplayState {
         this.readyForShot = true;
         this.shotTaken = false;
 
-        // optional visual feedback counters
         this.invalidPlacementFlash = 0;
     }
 
-    // Check if cue ball placement at (x,y) would overlap any non-pocketed ball.
+    // ------------------------------------------------
+    // VALIDATING CUE BALL PLACEMENT
+    // ------------------------------------------------
     isValidCueBallPlacement(x, y) {
-        const radius = this.cueBall.radius;
+        const r = this.cueBall.radius;
 
         for (const b of this.balls) {
-            if (b === this.cueBall || b.inHole) continue;
+            if (b === this.cueBall || b.inHole || b.isAnimating) continue;
 
             const dx = x - b.position.x;
             const dy = y - b.position.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
+            const d = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < radius * 2) {
-                return false; // overlaps
-            }
+            if (d < r * 2) return false;
         }
-
-        // also optionally ensure it's inside table borders
-        const l = this.policy.leftBorderX + this.cueBall.radius;
-        const r = this.policy.rightBorderX - this.cueBall.radius;
-        const t = this.policy.topBorderY + this.cueBall.radius;
-        const btm = this.policy.bottomBorderY - this.cueBall.radius;
-
-        if (x < l || x > r || y < t || y > btm) return false;
 
         return true;
     }
 
-    // -------------------------------
+    // ------------------------------------------------
     // MOUSE MOVE
-    // -------------------------------
+    // ------------------------------------------------
     handleMouseMove(x, y) {
-        // BALL-IN-HAND: move cue ball with mouse (but only if valid)
         if (this.ballInHand) {
-            // Clamp to bounds and only move if placement not overlapping
-            const clampedX = Math.max(this.policy.leftBorderX + this.cueBall.radius,
-                                      Math.min(this.policy.rightBorderX - this.cueBall.radius, x));
-            const clampedY = Math.max(this.policy.topBorderY + this.cueBall.radius,
-                                      Math.min(this.policy.bottomBorderY - this.cueBall.radius, y));
+            // Clamp within table borders
+            const newX = Math.max(this.policy.leftBorderX + this.cueBall.radius,
+                          Math.min(this.policy.rightBorderX - this.cueBall.radius, x));
+            const newY = Math.max(this.policy.topBorderY + this.cueBall.radius,
+                          Math.min(this.policy.bottomBorderY - this.cueBall.radius, y));
 
-            // show feedback while dragging; do not place on top of other balls
-            if (this.isValidCueBallPlacement(clampedX, clampedY)) {
-                this.cueBall.position.x = clampedX;
-                this.cueBall.position.y = clampedY;
+            if (this.isValidCueBallPlacement(newX, newY)) {
+                this.cueBall.position.x = newX;
+                this.cueBall.position.y = newY;
             } else {
-                // still allow cursor-follow but visually indicate invalid placement by not snapping
-                this.invalidPlacementFlash = Math.max(this.invalidPlacementFlash, 4);
+                this.invalidPlacementFlash = 5;
             }
-
-            // No aiming while placing
             return;
         }
 
-        // aiming only when balls stopped
         if (!this.readyForShot) return;
 
-        if (!this.cueBall) return;
         const dx = x - this.cueBall.position.x;
         const dy = y - this.cueBall.position.y;
+
         this.aimAngle = Math.atan2(dy, dx);
     }
 
-    // -------------------------------
+    // ------------------------------------------------
     // MOUSE DOWN
-    // -------------------------------
+    // ------------------------------------------------
     handleMouseDown() {
-        // If currently placing cue ball, do nothing here (we handle placement on mouse up)
         if (this.ballInHand) return;
-
         if (!this.readyForShot) return;
-
         this.isCharging = true;
     }
 
-    // -------------------------------
+    // ------------------------------------------------
     // MOUSE UP
-    // -------------------------------
+    // ------------------------------------------------
     handleMouseUp() {
-        // If placing cue ball, attempt to place it
+        // Placing cue ball?
         if (this.ballInHand) {
             if (this.isValidCueBallPlacement(this.cueBall.position.x, this.cueBall.position.y)) {
-                // Place it — cue ball stays where it is; allow shooting afterwards
                 this.ballInHand = false;
                 this.readyForShot = true;
                 this.invalidPlacementFlash = 0;
             } else {
-                // invalid placement: keep ball-in-hand and flash
                 this.invalidPlacementFlash = 10;
             }
-
-            // always clear any power state
             this.isCharging = false;
             this.power = 0;
             return;
         }
 
-        // normal shooting flow
         if (!this.isCharging) return;
+
         if (!this.readyForShot) {
             this.isCharging = false;
             this.power = 0;
             return;
         }
 
-        // shoot the cue ball
+        // SHOOT
         this.cueBall.shoot(this.power, this.aimAngle);
-        this.shotTaken = true;
-
         this.isCharging = false;
         this.power = 0;
+        this.shotTaken = true;
     }
 
-    // -------------------------------
-    // ON ENTER STATE
-    // -------------------------------
+    // ------------------------------------------------
+    // ENTER STATE
+    // ------------------------------------------------
     onEnter() {
-        console.log("Game Started — Entered Gameplay");
-
         this.policy = new GamePolicy(this.game);
 
-        // Create cue ball and balls array
         this.cueBall = new Ball(new Vector2(150, 400));
         this.balls = [ this.cueBall ];
 
-        // Build rack
-        const RACK_X = 1000;
-        const RACK_Y = 400;
-        const GAP = 38;
+        const RX = 1000, RY = 400, G = 38;
 
-        this.balls.push(new Ball(new Vector2(RACK_X, RACK_Y), sprites.spr_red));
+        const layout = [
+            [0,0,"spr_red"],
+            [1,-0.5,"spr_red"], [1,0.5,"spr_yellow"],
+            [2,-1,"spr_yellow"], [2,0,"spr_black"], [2,1,"spr_red"],
+            [3,-1.5,"spr_red"], [3,-0.5,"spr_yellow"], [3,0.5,"spr_red"], [3,1.5,"spr_yellow"],
+            [4,-2,"spr_yellow"], [4,-1,"spr_red"], [4,0,"spr_yellow"],
+            [4,1,"spr_yellow"], [4,2,"spr_red"]
+        ];
 
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP, RACK_Y-GAP/2), sprites.spr_red));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP, RACK_Y+GAP/2), sprites.spr_yellow));
-
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*2, RACK_Y-GAP), sprites.spr_yellow));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*2, RACK_Y), sprites.spr_black));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*2, RACK_Y+GAP), sprites.spr_red));
-
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*3, RACK_Y-GAP*1.5), sprites.spr_red));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*3, RACK_Y-GAP/2), sprites.spr_yellow));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*3, RACK_Y+GAP/2), sprites.spr_red));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*3, RACK_Y+GAP*1.5), sprites.spr_yellow));
-
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*4, RACK_Y-GAP*2), sprites.spr_yellow));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*4, RACK_Y-GAP), sprites.spr_red));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*4, RACK_Y), sprites.spr_yellow));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*4, RACK_Y+GAP), sprites.spr_yellow));
-        this.balls.push(new Ball(new Vector2(RACK_X+GAP*4, RACK_Y+GAP*2), sprites.spr_red));
+        for (let row of layout) {
+            const [col, off, color] = row;
+            this.balls.push(
+                new Ball(
+                    new Vector2(RX + col * G, RY + off * G),
+                    sprites[color]
+                )
+            );
+        }
     }
 
-    // -------------------------------
+    // ------------------------------------------------
     // UPDATE LOOP
-    // -------------------------------
+    // ------------------------------------------------
     update(dt) {
-        // power charging
+        // Power bar charging
         if (this.isCharging) {
             this.power += this.powerChargeSpeed * dt;
-            if (this.power > this.maxPower) this.power = this.maxPower;
+            this.power = Math.min(this.power, this.maxPower);
         }
 
-        // Ball-in-hand movement (use Mouse import)
+        // Ball-in-hand mode
         if (this.ballInHand) {
-            const newX = Mouse.position.x;
-            const newY = Mouse.position.y;
+            const mx = Mouse.position.x;
+            const my = Mouse.position.y;
 
-            // clamp inside table
             const clampedX = Math.max(this.policy.leftBorderX + this.cueBall.radius,
-                Math.min(this.policy.rightBorderX - this.cueBall.radius, newX));
+                Math.min(this.policy.rightBorderX - this.cueBall.radius, mx));
             const clampedY = Math.max(this.policy.topBorderY + this.cueBall.radius,
-                Math.min(this.policy.bottomBorderY - this.cueBall.radius, newY));
+                Math.min(this.policy.bottomBorderY - this.cueBall.radius, my));
 
             if (this.isValidCueBallPlacement(clampedX, clampedY)) {
                 this.cueBall.position.x = clampedX;
                 this.cueBall.position.y = clampedY;
-            } else {
-                // allow following cursor but don't overlap
-                // we keep last valid position
             }
 
             this.cueBall.velocity.x = 0;
             this.cueBall.velocity.y = 0;
 
-            // skip physics while placing
             return;
         }
 
-        // Work only on active (non-pocketed) balls
-        const active = this.balls.filter(b => !b.inHole);
+        // Update active balls
+        for (const b of this.balls) {
 
-        // Physics update for active balls
-        for (const b of active) {
+            // ----------------------------
+            // Pocket animation step
+            // ----------------------------
+            if (b.isAnimating) {
+                b.pocketAnim.timer += dt;
+                const t = b.pocketAnim.timer / b.pocketAnim.duration;
+
+                if (t >= 1) {
+                    // Remove permanently
+                    b.removeMe = true;
+                    continue;
+                }
+
+                // Smooth motion
+                b.position.x += (b.pocketAnim.targetX - b.position.x) * 0.1;
+                b.position.y += (b.pocketAnim.targetY - b.position.y) * 0.1;
+
+                // Shrink effect
+                b.scale = 1 - t;
+
+                continue; // skip physics
+            }
+
+            // Skip pocketed balls
+            if (b.inHole) continue;
+
+            // Regular physics
             b.integratePosition(dt);
             b.applyFrictionScaled(dt);
             b.borderBounce(this.policy);
 
-            // Pocket detection
+            // Check pocket entry
             if (this.policy.isBallInPocket(b)) {
-                // If cue ball pockets -> ball-in-hand
+
                 if (b === this.cueBall) {
+                    // Cue ball -> ball in hand
                     this.ballInHand = true;
-                    b.moving = false;
-                    b.visible = true;   // keep showing while placing
-                    b.inHole = false;   // keep in list, allow placing
                     b.velocity.x = b.velocity.y = 0;
-                    // stop physics for this frame (we're now in ball-in-hand)
-                    return;
+                    b.inHole = false;
+                    continue;
                 }
 
-                // Non-cue ball pocketed -> mark as inHole & hide
-                b.inHole = true;
-                b.visible = false;
-                b.velocity.x = b.velocity.y = 0;
-                b.moving = false;
-                // continue: do not return; process remaining active balls
+                // START POCKET ANIMATION
+                b.isAnimating = true;
+                b.pocketAnim = {
+                    timer: 0,
+                    duration: 0.5,
+                    targetX: this.policy.lastPocketX,
+                    targetY: this.policy.lastPocketY
+                };
+
+                continue;
             }
         }
 
-        // Run collisions only between active balls (non-pocketed)
-        const activeAfterPocket = this.balls.filter(b => !b.inHole);
-        if (activeAfterPocket.length > 1) {
-            collideAllBalls(activeAfterPocket);
-        }
+        // Remove animated finished balls
+        this.balls = this.balls.filter(b => !b.removeMe);
 
-        // Determine if all balls (non-pocketed) have stopped
-        const anyMoving = this.balls.some(b => !b.inHole && b.moving);
+        // Collisions among active balls
+        const active = this.balls.filter(b => !b.inHole && !b.isAnimating);
 
-        if (!anyMoving) {
-            this.readyForShot = true;
-            this.shotTaken = false;
-        } else {
-            this.readyForShot = false;
-        }
+        if (active.length > 1) collideAllBalls(active);
+
+        // Determine shot completion
+        const anyMoving = this.balls.some(b => b.moving && !b.inHole && !b.isAnimating);
+
+        this.readyForShot = !anyMoving;
     }
 
-    // -------------------------------
+    // ------------------------------------------------
     // DRAW LOOP
-    // -------------------------------
+    // ------------------------------------------------
     draw() {
         Canvas2D.clear();
         Canvas2D.drawImage(sprites.background, new Vector2(0, 0));
 
-        for (const b of this.balls) b.draw();
+        for (const b of this.balls) {
+            if (b.visible !== false) b.draw();
+        }
 
-        // Draw cue stick when ready and not placing
+        // Stick
         if (!this.cueBall.moving && !this.cueBall.inHole && !this.ballInHand) {
+
             const TIP_OFFSET_X = -10;
             const TIP_OFFSET_Y = 0;
-
             const stickDist = 15 + (this.power / this.maxPower) * 60;
 
-            const stickX = this.cueBall.position.x - Math.cos(this.aimAngle) * stickDist;
-            const stickY = this.cueBall.position.y - Math.sin(this.aimAngle) * stickDist;
+            const sx = this.cueBall.position.x - Math.cos(this.aimAngle) * stickDist;
+            const sy = this.cueBall.position.y - Math.sin(this.aimAngle) * stickDist;
 
             const origin = new Vector2(
                 sprites.spr_stick.width - TIP_OFFSET_X,
@@ -288,7 +279,7 @@ export default class GameplayState {
 
             Canvas2D.drawImage(
                 sprites.spr_stick,
-                new Vector2(stickX, stickY),
+                new Vector2(sx, sy),
                 this.aimAngle,
                 1,
                 origin
@@ -297,17 +288,15 @@ export default class GameplayState {
 
         // Power bar
         if (this.isCharging) {
-            const pct = Math.min(1, this.power / this.maxPower);
+            const pct = this.power / this.maxPower;
             const ctx = Canvas2D._ctx;
-
             ctx.fillStyle = "#000";
             ctx.fillRect(50, 760, 200, 20);
-
             ctx.fillStyle = "#0f0";
             ctx.fillRect(50, 760, 200 * pct, 20);
         }
 
-        // Ball-in-hand message
+        // Ball-in-hand UI
         if (this.ballInHand) {
             const ctx = Canvas2D._ctx;
             ctx.fillStyle = "yellow";
@@ -321,9 +310,8 @@ export default class GameplayState {
             ctx.strokeStyle = "red";
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.arc(this.cueBall.position.x, this.cueBall.position.y, this.cueBall.radius + 4, 0, Math.PI*2);
+            ctx.arc(this.cueBall.position.x, this.cueBall.position.y, this.cueBall.radius + 4, 0, Math.PI * 2);
             ctx.stroke();
-
             this.invalidPlacementFlash--;
         }
     }
