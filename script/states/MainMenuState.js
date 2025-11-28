@@ -1,30 +1,16 @@
+// script/states/MainMenuState.js
+
 import Canvas2D from "../Canvas2D.js";
 import { sprites } from "../Assets.js";
 import Vector2 from "../geom/Vector2.js";
-// import { sprites } from "../Assets.js";
 import Button from "../menu/Button.js";
 
 export default class MainMenuState {
     constructor(game, gsm) {
         this.game = game;
         this.gsm = gsm;
-
-        // button positions
-        this.oneBtn = {
-            pos: new Vector2(500, 350),
-            w: 496,
-            h: 129,
-            hover: false
-        };
-
-        this.twoBtn = {
-            pos: new Vector2(500, 500),
-            w: 496,
-            h: 129,
-            hover: false
-        };
     }
-    
+
     onEnter() {
         console.log("Entered Main Menu");
 
@@ -34,7 +20,8 @@ export default class MainMenuState {
                 sprites.onePlayersButtonHover,
                 new Vector2(500, 300),
                 () => {
-                    console.log("1 Player clicked");
+                    console.log("1 Player (Practice) clicked");
+                    this.game.mode = "practice";
                     this.gsm.changeState(this.game.gameplayState);
                 }
             ),
@@ -43,7 +30,8 @@ export default class MainMenuState {
                 sprites.twoPlayersButtonHover,
                 new Vector2(500, 450),
                 () => {
-                    console.log("2 Player clicked");
+                    console.log("2 Player (Match) clicked");
+                    this.game.mode = "match";
                     this.gsm.changeState(this.game.gameplayState);
                 }
             )
@@ -52,44 +40,36 @@ export default class MainMenuState {
     update(dt) {}
 
     draw() {
-        // Canvas2D.clear();
-
-        // // draw background
-        // Canvas2D.drawImage(sprites.mainMenuBackground, new Vector2(0, 0), 0, 1, Vector2.zero);
-
-        // draw ONE PLAYER button
-       Canvas2D.clear();
+        Canvas2D.clear();
         Canvas2D.drawImage(sprites.mainMenuBackground, new Vector2(0,0));
 
         for (const btn of this.buttons) btn.draw();
     }
 
     handleMouseMove(x, y) {
-        this.oneBtn.hover = this._hit(this.oneBtn, x, y);
-        this.twoBtn.hover = this._hit(this.twoBtn, x, y);
+        // Button hover handled by Button.isHovered which reads Mouse.position.
+        // But to be safe, we can forward move to each button by simulating Mouse position update.
+        for (const btn of this.buttons) {
+            // nothing needed — Button.isHovered reads global Mouse
+        }
     }
+
     handleMouseDown() {
         for (const btn of this.buttons) btn.handleInput();
     }
 
     handleClick(x, y) {
-        if (this._hit(this.oneBtn, x, y)) {
-            console.log("1 Player clicked");
+        // fallback click handling (not necessary if button handles mousedown)
+        // Retained for compatibility
+        if (x >= 500 && x <= 500 + sprites.onePlayersButton.width &&
+            y >= 300 && y <= 300 + sprites.onePlayersButton.height) {
+            this.game.mode = "practice";
             this.gsm.changeState(this.game.gameplayState);
         }
-
-        if (this._hit(this.twoBtn, x, y)) {
-            console.log("2 Player clicked");
-            this.gsm.changeState(this.game.gameplayState); // same for now
+        if (x >= 500 && x <= 500 + sprites.twoPlayersButton.width &&
+            y >= 450 && y <= 450 + sprites.twoPlayersButton.height) {
+            this.game.mode = "match";
+            this.gsm.changeState(this.game.gameplayState);
         }
-    }
-
-    _hit(btn, mx, my) {
-        return (
-            mx >= btn.pos.x &&
-            mx <= btn.pos.x + btn.w &&
-            my >= btn.pos.y &&
-            my <= btn.pos.y + btn.h
-        );
     }
 }

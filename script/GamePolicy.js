@@ -46,6 +46,8 @@ export default class GamePolicy {
         const dy = ball.position.y - h.y;
 
         if (dx*dx + dy*dy <= this.holeRadius * this.holeRadius) {
+            this.lastPocketX = h.x;   // ADD THIS
+            this.lastPocketY = h.y;   // ADD THIS
             return true;
         }
     }
@@ -66,5 +68,6 @@ export default class GamePolicy {
         ball.velocity.y = 0;
         // TODO: if white -> respawn logic; if object ball -> remove from table list
     }
+    
 
 }

@@ -1,34 +1,44 @@
+// script/GameStateManager.js
 export default class GameStateManager {
-    constructor() {
-        this.current = null;
+    constructor(game) {
+        this.game = game;
+        this.currentState = null;
     }
 
     changeState(newState) {
-        if (this.current?.onExit) this.current.onExit();
-        this.current = newState;
-        if (this.current?.onEnter) this.current.onEnter();
+        this.currentState = newState;
+        if (this.currentState.onEnter)
+            this.currentState.onEnter();
     }
 
     update(dt) {
-        this.current?.update?.(dt);
+        if (this.currentState && this.currentState.update)
+            this.currentState.update(dt);
     }
 
     draw() {
-        this.current?.draw?.();
+        if (this.currentState && this.currentState.draw)
+            this.currentState.draw();
     }
 
-    // NEW
+    // ===== FIXED INPUT ROUTING =====
     handleMouseMove(x, y) {
-        this.current?.handleMouseMove?.(x, y);
+        if (this.currentState && this.currentState.handleMouseMove)
+            this.currentState.handleMouseMove(x, y);
     }
 
-    // NEW
-    handleMouseDown() {
-        this.current?.handleMouseDown?.();
+    handleMouseDown(x, y) {
+        if (this.currentState && this.currentState.handleMouseDown)
+            this.currentState.handleMouseDown(x, y);
     }
 
-    // NEW
-    handleMouseUp() {
-        this.current?.handleMouseUp?.();
+    handleMouseUp(x, y) {
+        if (this.currentState && this.currentState.handleMouseUp)
+            this.currentState.handleMouseUp(x, y);
+    }
+
+    handleClick(x, y) {
+        if (this.currentState && this.currentState.handleClick)
+            this.currentState.handleClick(x, y);
     }
 }

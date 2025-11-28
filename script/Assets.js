@@ -82,6 +82,7 @@ export async function loadAssets() {
     sprites.yellowBall = sprites.spr_yellow;
     sprites.blackBall = sprites.spr_black;
     sprites.stick = sprites.spr_stick;
+    sprites.background = sprites.background;
 
     return true;
 }

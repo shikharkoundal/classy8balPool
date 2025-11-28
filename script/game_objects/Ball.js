@@ -6,10 +6,9 @@ import { sprites } from "../Assets.js";
 export const BALL_DIAMETER = 50;
 export const BALL_RADIUS = BALL_DIAMETER / 2;
 
-// friction model: FRIC_PER_SEC is multiplicative per second.
-// We'll apply it once per frame (scaled by dt)
-const FRIC_PER_SEC = 0.97; // <--- tune this (closer to 1 = less friction)
-const STOP_T = 1;            // velocity magnitude under which we stop
+// friction per second (multiplicative)
+const FRIC_PER_SEC = 0.98;
+const HARD_STOP_SPEED_SQ = 1; // if speed^2 below this -> force stop
 
 export default class Ball {
     constructor(position, sprite = sprites.ball) {
@@ -23,25 +22,27 @@ export default class Ball {
         this.moving = false;
         this.visible = true;
         this.inHole = false;
+
+        // needed for pocket animation
+        this.scale = 1;
+        this.isAnimating = false;
+        this.removeMe = false;
+        this.isCueBall = false;
     }
 
     shoot(power, angle) {
-        // tuned scale: change if needed
-        const speed = power * 0.5;
+        // tuned speed
+        const speed = power * 0.3;
         this.velocity.x = Math.cos(angle) * speed;
         this.velocity.y = Math.sin(angle) * speed;
         this.moving = true;
-        console.log("SHOOT SPEED:", this.velocity);
     }
 
-    // move by dt (no friction here). returns nothing.
     integratePosition(dt) {
-        // simple Euler step
         this.position.x += this.velocity.x * dt;
         this.position.y += this.velocity.y * dt;
     }
 
-    // border collision (in-place) — resolves position and reflects velocity
     borderBounce(policy) {
         const l = policy.leftBorderX + this.radius;
         const r = policy.rightBorderX - this.radius;
@@ -69,26 +70,42 @@ export default class Ball {
         }
     }
 
-    // apply friction scaled by dt (apply once per frame after all substeps)
     applyFrictionScaled(dt) {
-        if (this.inHole) return;
-        // scale per-second friction to this dt: factor = FRIC_PER_SEC^(dt)
-        const factor = Math.pow(FRIC_PER_SEC, dt * 60); // 60 is arbitrary baseline to make tuning intuitive
-        this.velocity.multiplyWith(factor);
+        // do nothing for pocketed/animating balls
+        if (this.inHole || this.isAnimating) return;
 
-        // stop threshold (magnitude)
+        // apply multiplicative friction scaled to dt
+        const factor = Math.pow(FRIC_PER_SEC, dt * 60);
+        // Vector2 has multiplyWith in your repo — but remain safe and update components directly:
+        if (typeof this.velocity.multiplyWith === "function") {
+            this.velocity.multiplyWith(factor);
+        } else {
+            this.velocity.x *= factor;
+            this.velocity.y *= factor;
+        }
+
+        // hard stop: if speed small enough, set exact zero to avoid eternal tiny velocities
         const speedSq = this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y;
-        if (speedSq < STOP_T * STOP_T) {
+        if (speedSq < HARD_STOP_SPEED_SQ) {
             this.velocity.x = 0;
             this.velocity.y = 0;
             this.moving = false;
-        } else {
-            this.moving = true;
+            return;
         }
+
+        // otherwise still moving
+        this.moving = true;
     }
 
     draw() {
         if (!this.visible) return;
-        Canvas2D.drawImage(this.sprite, this.position, 0, 1, this.origin);
+
+        Canvas2D.drawImage(
+            this.sprite,
+            this.position,
+            0,
+            this.scale,
+            this.origin
+        );
     }
 }

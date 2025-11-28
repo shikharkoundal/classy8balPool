@@ -1,3 +1,4 @@
+// script/Game.js (only changed lines shown — replace whole file if you prefer)
 import Canvas2D from "./Canvas2D.js";
 import Vector2 from "./geom/Vector2.js";
 import GameStateManager from "./GameStateManager.js";
@@ -8,9 +9,8 @@ import Ball from "./game_objects/Ball.js";
 export default class Game {
     constructor() {
         this.size = new Vector2(1500, 825);
-
-        // Correct GSM initialization
         this.gsm = new GameStateManager(this);
+        this.mode = "practice"; // default
     }
 
     async start(divName, canvasName, w, h) {
@@ -23,7 +23,7 @@ export default class Game {
 
         await new Promise(r => requestAnimationFrame(r));
 
-        // Create states
+        // Create states once and reuse
         this.mainMenuState = new MainMenuState(this, this.gsm);
         this.gameplayState = new GameplayState(this, this.gsm);
 
@@ -34,7 +34,6 @@ export default class Game {
         requestAnimationFrame(ts => this._loop(ts));
     }
 
-    // ⭐ This is what GameplayState is calling
     createBall(x, y) {
         return new Ball(new Vector2(x, y));
     }
