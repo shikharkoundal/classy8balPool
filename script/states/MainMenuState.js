@@ -48,13 +48,23 @@ export default class MainMenuState {
         80,
         sprites.twoPlayersButton,
         sprites.twoPlayersButtonHover,
+        // () => {
+
+        //   this.manager.changeState(
+        //     new GameplayState(this.manager,"pvp")
+        //   );
+
+        // }
+
         () => {
 
-          this.manager.changeState(
-            new GameplayState(this.manager,"pvp")
-          );
+  console.log("1 PLAYER CLICKED");
 
-        }
+  this.manager.changeState(
+    new GameplayState(this.manager,"ai")
+  );
+
+}
       )
     ];
 
