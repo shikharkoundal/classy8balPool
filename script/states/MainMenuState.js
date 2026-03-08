@@ -109,7 +109,7 @@ export default class MainMenuState {
   }
 
 update(dt) {
-console.log("menu updating");
+// console.log("menu updating");
   // update button hover
   for (const b of this.buttons) {
     b.update(this.mouse.x,this.mouse.y);

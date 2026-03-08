@@ -65,6 +65,9 @@ export default class GameplayState {
   }
 
   enter() {
+
+  console.log("GAMEPLAY STARTED");
+
     const canvas = Canvas2D.canvas;
 
     this.balls = [];
