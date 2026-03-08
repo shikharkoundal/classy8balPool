@@ -1,516 +1,552 @@
-// script/states/GameplayState.js
-import Ball from "../game_objects/Ball.js";
-import Vector2 from "../geom/Vector2.js";
-import GamePolicy from "../GamePolicy.js";
-import Canvas2D from "../Canvas2D.js";
+import Canvas2D from "../core/Canvas2D.js";
+import Ball from "../game/Ball.js";
 import { sprites } from "../Assets.js";
-
-import PhysicsWorld from "../physics/PhysicsWorld.js";
-import PocketSystem from "../systems/PocketSystem.js";
-import FloatingTextSystem from "../systems/FloatingTextSystem.js";
-import TurnManager from "../systems/TurnManager.js";
-import RuleEngine from "../systems/RuleEngine.js";
-import { eventBus } from "../systems/EventBus.js";
-import Mouse from "../input/Mouse.js";
-
-function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+import AI from "../game/AI.js";
+import RulesEngine from "../game/RulesEngine.js";
 
 export default class GameplayState {
-    constructor(game, gsm) {
-        this.game = game;
-        this.gsm = gsm;
+  constructor(manager, mode) {
+    this.manager = manager;
+    this.mode = mode;
 
-        // aim/power
-        this.aimAngle = 0;
-        this.power = 0;
-        this.maxPower = 6000;
-        this.powerChargeSpeed = 12000;
-        this.isCharging = false;
+    this.balls = [];
+    this.cueBall = null;
 
-        // systems will be created onEnter
-        this.physics = null;
-        this.pockets = null;
-        this.floating = null;
-        this.turns = null;
-        this.rules = null;
+    this.mouse = { x: 0, y: 0 };
 
-        // shot state
-        this.ballInHand = false;
-        this.readyForShot = true;
-        this.shotTaken = false;
+    this.isCharging = false;
+    this.power = 0;
+    this.maxPower = 2500;
 
-        this.firstContactBall = null;
-        this.pottedColors = [];
-        this._shotStartScore = { red: 0, yellow: 0 };
-        this.foulThisShot = false;
+    this.TABLE = {
+      left: 50,
+      right: 950,
+      top: 50,
+      bottom: 550,
+    };
 
-        // scores
-        this.scoreRed = 0;
-        this.scoreYellow = 0;
-        this.totalRed = 7;
-        this.totalYellow = 7;
-        this.foulCount = 0;
+    this.POCKET_RADIUS = 35;
 
-        this.invalidPlacementFlash = 0;
-        this.gameOver = null;
+    this.pockets = [
+      { x: 50, y: 50 },
+      { x: 500, y: 50 },
+      { x: 950, y: 50 },
+      { x: 50, y: 550 },
+      { x: 500, y: 550 },
+      { x: 950, y: 550 },
+    ];
 
-        // hooks
-        this._unsubFirst = null;
-        this._unsubAllStopped = null;
-        this._unsubPocketed = null;
+    this.currentPlayer = "A";
+    this.aiPlayer = "B";
+
+    this.shotInProgress = false;
+    this.ballPocketedThisTurn = false;
+    this.scratchThisTurn = false;
+
+    this.playerGroup = {
+      A: null,
+      B: null,
+    };
+
+    this.playerStats = {
+      A: { shots: 0, scored: 0 },
+      B: { shots: 0, scored: 0 },
+    };
+
+    this.aiDifficulty = "medium";
+
+    this.gameOver = false;
+    this.winner = null;
+
+    this.lamp = {
+  x: 500,
+  y: 120
+};
+  }
+
+  enter() {
+    const canvas = Canvas2D.canvas;
+
+    this.balls = [];
+
+    /* Cue ball */
+
+    this.cueBall = new Ball(250, 300, 20, "white", sprites.spr_ball);
+
+    this.balls.push(this.cueBall);
+
+    /* Rack */
+
+    const startX = 700;
+    const startY = 300;
+    const spacing = 42;
+
+    const rackColors = [
+      "red",
+      "yellow",
+      "red",
+      "yellow",
+      "red",
+      "yellow",
+      "red",
+      "black",
+      "yellow",
+      "red",
+      "yellow",
+      "red",
+      "yellow",
+      "red",
+      "yellow",
+    ];
+
+    let index = 0;
+
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j <= i; j++) {
+        const x = startX + i * spacing;
+        const y = startY - (i * spacing) / 2 + j * spacing;
+
+        const color = rackColors[index++];
+
+        this.balls.push(new Ball(x, y, 20, color, sprites["spr_" + color]));
+      }
     }
 
-    // ------------------------------------------------------------------
-    // Mouse handlers (use direct x/y assignment - Vector2.set may not exist)
-    // ------------------------------------------------------------------
-    handleMouseMove(x, y) {
-        if (this.gameOver) return;
+    /* INPUT */
 
-        if (this.ballInHand) {
-            const newX = Math.max(this.policy.leftBorderX + this.cueBall.radius,
-                Math.min(this.policy.rightBorderX - this.cueBall.radius, x));
-            const newY = Math.max(this.policy.topBorderY + this.cueBall.radius,
-                Math.min(this.policy.bottomBorderY - this.cueBall.radius, y));
+    canvas.addEventListener(
+      "mousemove",
+      (this.mouseMove = (e) => {
+        const rect = canvas.getBoundingClientRect();
 
-            if (this._isValidCueBallPlacement(newX, newY)) {
-                this.cueBall.position.x = newX;
-                this.cueBall.position.y = newY;
-            } else {
-                this.invalidPlacementFlash = 5;
-            }
-            return;
-        }
+        this.mouse.x = e.clientX - rect.left;
+        this.mouse.y = e.clientY - rect.top;
+      }),
+    );
 
-        if (!this.readyForShot) return;
-        const dx = x - this.cueBall.position.x;
-        const dy = y - this.cueBall.position.y;
-        this.aimAngle = Math.atan2(dy, dx);
-    }
-
-    handleMouseDown() {
-        if (this.gameOver) return;
-        if (this.ballInHand) return;
-        if (!this.readyForShot) return;
+    canvas.addEventListener(
+      "mousedown",
+      (this.mouseDown = () => {
+        if (this.ballsAreMoving() || this.gameOver) return;
         this.isCharging = true;
-    }
+      }),
+    );
 
-    handleMouseUp() {
-        if (this.gameOver) return;
-
-        if (this.ballInHand) {
-            if (this._isValidCueBallPlacement(this.cueBall.position.x, this.cueBall.position.y)) {
-                this.ballInHand = false;
-                this.readyForShot = true;
-            } else {
-                this.invalidPlacementFlash = 10;
-            }
-            this.power = 0;
-            this.isCharging = false;
-            return;
-        }
-
+    canvas.addEventListener(
+      "mouseup",
+      (this.mouseUp = () => {
         if (!this.isCharging) return;
 
-        // begin shot
-        this.shotTaken = true;
-        this.readyForShot = false;
-        this.firstContactBall = null;
-        this.pottedColors = [];
-        this.foulThisShot = false;
-        this._shotStartScore = { red: this.scoreRed, yellow: this.scoreYellow };
-
-        // let physics/collisions know new shot started
-        eventBus.emit("shotStart", {});
-
-        // listen for first contact during this shot
-        if (this._unsubFirst) this._unsubFirst();
-        this._unsubFirst = eventBus.on("firstContact", (ball) => {
-            if (!this.firstContactBall) this.firstContactBall = ball;
-        });
-
-        // listen for pockets
-        if (this._unsubPocketed) this._unsubPocketed();
-        this._unsubPocketed = eventBus.on("ballPocketed", ({ ball, pocketPos }) => {
-            const color = this._getBallColor(ball);
-            this.pottedColors.push(color);
-
-            if (color === "red") {
-                this.scoreRed++;
-                this.floating.spawn("+1", ball.position.x, ball.position.y);
-            }
-            if (color === "yellow") {
-                this.scoreYellow++;
-                this.floating.spawn("+1", ball.position.x, ball.position.y);
-            }
-
-            // mark animation properties
-            ball.isAnimating = true;
-            ball.pocketAnim = {
-                timer: 0,
-                duration: 0.55,
-                startX: ball.position.x,
-                startY: ball.position.y,
-                targetX: Math.round(pocketPos.x),
-                targetY: Math.round(pocketPos.y)
-            };
-            ball.inHole = true;
-        });
-
-        // finally shoot
-        this.cueBall.shoot(this.power, this.aimAngle);
+        this.shootBall();
 
         this.isCharging = false;
         this.power = 0;
+      }),
+    );
+  }
+
+  exit() {
+    const canvas = Canvas2D.canvas;
+
+    canvas.removeEventListener("mousemove", this.mouseMove);
+    canvas.removeEventListener("mousedown", this.mouseDown);
+    canvas.removeEventListener("mouseup", this.mouseUp);
+  }
+
+  update(dt) {
+    /* Power charging */
+
+    if (this.isCharging) {
+      this.power += 3000 * dt;
+
+      if (this.power > this.maxPower) {
+        this.power = this.maxPower;
+      }
     }
 
-    // ------------------------------------------------------------------
-    // onEnter - initialize systems & table
-    // ------------------------------------------------------------------
-    onEnter() {
-        this.policy = new GamePolicy(this.game);
+    /* Ball physics */
 
-        // create systems
-        this.physics = new PhysicsWorld(this.policy);
-        this.pockets = new PocketSystem(this.policy);
-        this.floating = new FloatingTextSystem();
-        this.turns = new TurnManager();
-        this.rules = new RuleEngine(this.turns, { red: this.totalRed, yellow: this.totalYellow });
-
-        // cue ball
-        this.cueBall = new Ball(new Vector2(150, 400));
-        this.cueBall.scale = 1;
-        this.cueBall.isCueBall = true;
-
-        // table balls
-        this.balls = [ this.cueBall ];
-        const RX = 1000, RY = 400, G = 38;
-        const layout = [
-            [0,0,"spr_red"],
-            [1,-0.5,"spr_red"], [1,0.5,"spr_yellow"],
-            [2,-1,"spr_yellow"], [2,0,"spr_black"], [2,1,"spr_red"],
-            [3,-1.5,"spr_red"], [3,-0.5,"spr_yellow"], [3,0.5,"spr_red"], [3,1.5,"spr_yellow"],
-            [4,-2,"spr_yellow"], [4,-1,"spr_red"], [4,0,"spr_yellow"],
-            [4,1,"spr_yellow"], [4,2,"spr_red"]
-        ];
-
-        for (const row of layout) {
-            const [col, off, color] = row;
-            const b = new Ball(
-                new Vector2(RX + col * G, RY + off * G),
-                sprites[color]
-            );
-            b.scale = 1;
-            this.balls.push(b);
-        }
-
-        // reset gameplay state
-        this.scoreRed = 0;
-        this.scoreYellow = 0;
-        this.foulCount = 0;
-        this.ballInHand = false;
-        this.readyForShot = true;
-        this.shotTaken = false;
-        this.firstContactBall = null;
-        this.pottedColors = [];
-        this.foulThisShot = false;
-        this.invalidPlacementFlash = 0;
-        this.floating.items = [];
-        this.gameOver = null;
-
-        // subscribe to allBallsStopped to finish shot processing if needed
-        if (this._unsubAllStopped) this._unsubAllStopped();
-        this._unsubAllStopped = eventBus.on("allBallsStopped", () => {
-            if (this.shotTaken) {
-                // ensure shotTaken toggled only here
-                this.shotTaken = false;
-                this._onShotComplete();
-            }
-        });
-        // -----------------------------------------
-        // NEW: Cue ball pocket listener
-        // -----------------------------------------
-        if (this._unsubCuePocket) this._unsubCuePocket();
-        this._unsubCuePocket = eventBus.on("cueBallPocketed", () => {
-            console.log("Cue ball scratched!");
-            this.foulThisShot = true;   // mark immediate foul
-        });
-
+    for (const ball of this.balls) {
+      ball.update(dt, this.TABLE);
     }
 
-    // ------------------------------------------------------------------
-    // internal helpers
-    // ------------------------------------------------------------------
-    _isValidCueBallPlacement(x, y) {
-        const r = this.cueBall.radius;
-        for (const b of this.balls) {
-            if (!b || b === this.cueBall || b.inHole || b.isAnimating) continue;
-            const dx = x - b.position.x;
-            const dy = y - b.position.y;
-            const d = Math.sqrt(dx*dx + dy*dy);
-            if (d < r*2 - 1) return false;
-        }
-        return true;
+    /* Ball collisions */
+
+    for (let i = 0; i < this.balls.length; i++) {
+      for (let j = i + 1; j < this.balls.length; j++) {
+        this.handleBallCollision(this.balls[i], this.balls[j]);
+      }
     }
 
-    _getBallColor(ball) {
-        if (!ball || !ball.sprite) return "cue";
-        if (ball.sprite === sprites.spr_red) return "red";
-        if (ball.sprite === sprites.spr_yellow) return "yellow";
-        if (ball.sprite === sprites.spr_black) return "black";
-        return "cue";
+    /* Pocket detection */
+
+    for (let i = this.balls.length - 1; i >= 0; i--) {
+      const ball = this.balls[i];
+
+      if (!this.checkPocket(ball)) continue;
+
+      RulesEngine.handlePocket(this, ball);
+
+      if (ball !== this.cueBall) {
+        this.balls.splice(i, 1);
+
+        this.playerStats[this.currentPlayer].scored++;
+      }
     }
 
-    _onShotComplete() {
-        // prepare context for rule engine
-        const ctx = {
-            shooter: this.turns.current,
-            firstContactBall: this.firstContactBall,
-            pottedColors: this.pottedColors.slice(),
-            scoreBefore: this._shotStartScore,
-            scoreAfter: { red: this.scoreRed, yellow: this.scoreYellow },
-            foulThisShot: this.foulThisShot
-        };
+    /* Turn resolution */
 
-        const result = this.rules.evaluateShot(ctx);
+    if (this.shotInProgress && !this.ballsAreMoving()) {
+      this.shotInProgress = false;
 
-        // assignment
-        if (result.assign) {
-            this.turns.assign(result.assign.player, result.assign.group);
-        }
-
-        // fouls -> next player gets ball-in-hand
-  // fouls -> increment and give ball-in-hand to opponent
-        if (result.foul || this.foulThisShot) {
-
-            this.foulCount++;
-            this.turns.next();
-
-            // Start ball in hand NOW
-            this.ballInHand = true;
-
-            // Make sure cue is removed from hole state
-            this.cueBall.inHole = false;
-            this.cueBall.isAnimating = false;
-            this.cueBall.removeMe = false;
-            this.cueBall.scale = 1;
-
-            // Reset speed
-            this.cueBall.velocity.x = 0;
-            this.cueBall.velocity.y = 0;
-
-            // TEMP SAFE POSITION
-            this.cueBall.position.x = this.policy.leftBorderX + 150;
-            this.cueBall.position.y = this.policy.topBorderY + 200;
-
-            this.foulThisShot = false;
-            return;
-        }
-
-
-
-
-        // game over
-        if (result.gameOver) {
-            this.gameOver = result.gameOver;
-            return;
-        }
-
-        // turn switching
-        if (result.switchTurn) {
-            this.turns.next();
-        } else {
-            // shooter continues
-        }
-
-        // cleanup removed pocketed balls
-        this.balls = this.balls.filter(b => !b.removeMe);
-
-        // ensure cue ball present
-        if (!this.balls.find(x => x.isCueBall)) {
-            const newCue = new Ball(new Vector2(150, 400));
-            newCue.isCueBall = true;
-            this.balls.unshift(newCue);
-            this.cueBall = newCue;
-        }
-
-        // ready for next shot (unless ball-in-hand or game over)
-        this.readyForShot = !this.gameOver && !this.ballInHand;
+      RulesEngine.resolveTurn(this);
     }
 
-    // ------------------------------------------------------------------
-    // update loop
-    // ------------------------------------------------------------------
-    update(dt) {
-        // update floating texts first (they draw in HUD)
-        if (this.floating) this.floating.update(dt);
+    /* AI Trigger */
 
-        if (this.isCharging) {
-            this.power += this.powerChargeSpeed * dt;
-            this.power = Math.min(this.power, this.maxPower);
-        }
+    if (
+      this.mode === "ai" &&
+      this.currentPlayer === this.aiPlayer &&
+      !this.shotInProgress &&
+      !this.ballsAreMoving()
+    ) {
+      AI.takeShot(this);
+    }
+  }
+  render() {
+    const ctx = Canvas2D.ctx;
 
-        // ball-in-hand movement
-        if (this.ballInHand) {
-            this.cueBall.inHole = false;
-            this.cueBall.isAnimating = false;
-            const mx = Mouse.position.x;
-            const my = Mouse.position.y;
-            const clampedX = Math.max(this.policy.leftBorderX + this.cueBall.radius,
-                Math.min(this.policy.rightBorderX - this.cueBall.radius, mx));
-            const clampedY = Math.max(this.policy.topBorderY + this.cueBall.radius,
-                Math.min(this.policy.bottomBorderY - this.cueBall.radius, my));
-            if (this._isValidCueBallPlacement(clampedX, clampedY)) {
-                this.cueBall.position.x = clampedX;
-                this.cueBall.position.y = clampedY;
-            }
-            this.cueBall.velocity.x = 0;
-            this.cueBall.velocity.y = 0;
-            return;
-        }
+    ctx.clearRect(0, 0, Canvas2D.canvas.width, Canvas2D.canvas.height);
 
-        // physics step (will emit firstContact & allBallsStopped etc.)
-        if (this.physics) this.physics.step(this.balls, dt);
+    /* Background */
 
-        // pocket detection
-        if (this.pockets) this.pockets.detectAndStartPocket(this.balls);
-        // if (this.cueBall.inHole) {
-        //             // Cue ball scratch: DO NOT animate/scale/remove.
-        //             // eventBus.emit("ballPocketed", { ball: b, pocketPos: nearest });
+    const gradient = ctx.createRadialGradient(500, 300, 200, 500, 300, 900);
 
-        //             this.cueBall.inHole = false;      // mark scratched
-        //             this.cueBall.isAnimating = false; // 🟩 prevent pocket animation
-        //             this.ballInHand = true;    // stay on table
-        //             return;
-        // }
+    gradient.addColorStop(0, "#1a1a1a");
+    gradient.addColorStop(1, "#000");
 
-        // animate pocketing balls
-        for (const b of this.balls) {
-            if (!b.isAnimating) continue;
-            b.pocketAnim.timer += dt;
-            const tRaw = b.pocketAnim.timer / b.pocketAnim.duration;
-            const t = Math.min(1, tRaw);
-            const e = easeOutQuad(t);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1000, 600);
 
-            b.position.x = b.pocketAnim.startX + (b.pocketAnim.targetX - b.pocketAnim.startX) * e;
-            b.position.y = b.pocketAnim.startY + (b.pocketAnim.targetY - b.pocketAnim.startY) * e;
-            b.scale = Math.max(0.01, 1 - e);
+    /* Table */
 
-            if (t >= 1) b.removeMe = true;
-        }
-
-        // cleanup removed balls
-        if (this.balls.some(b => b.removeMe)) {
-            this.balls = this.balls.filter(b => !b.removeMe);
-        }
+    if (sprites.background) {
+      ctx.drawImage(sprites.background, 0, 0, 1000, 600);
     }
 
-    // ------------------------------------------------------------------
-    // draw
-    // ------------------------------------------------------------------
-    draw() {
-        Canvas2D.clear();
-        Canvas2D.drawImage(sprites.background, new Vector2(0, 0));
+    /* ===== TABLE LIGHTING ===== */
 
-        // draw balls (anim scale)
-        for (const b of this.balls) {
-            if (!b.visible) continue;
-            if (b.isAnimating) {
-                Canvas2D.drawImage(b.sprite, b.position, 0, b.scale, new Vector2(b.radius, b.radius));
-            } else {
-                b.draw();
-            }
-        }
+    const tableLight = ctx.createRadialGradient(500, 300, 100, 500, 300, 700);
 
-        // cue stick
-        if (!this.cueBall.moving && !this.cueBall.inHole && !this.ballInHand && !this.gameOver) {
-            const stickDist = 15 + (this.power / this.maxPower) * 60;
-            const sx = this.cueBall.position.x - Math.cos(this.aimAngle) * stickDist;
-            const sy = this.cueBall.position.y - Math.sin(this.aimAngle) * stickDist;
-            Canvas2D.drawImage(
-                sprites.spr_stick,
-                new Vector2(sx, sy),
-                this.aimAngle,
-                1,
-                new Vector2(sprites.spr_stick.width + 10, sprites.spr_stick.height / 2)
-            );
-        }
+    tableLight.addColorStop(0, "rgba(0,0,0,0)");
+    tableLight.addColorStop(0.6, "rgba(0,0,0,0.15)");
+    tableLight.addColorStop(1, "rgba(0,0,0,0.45)");
 
-        // power bar
-        if (this.isCharging && !this.gameOver) {
-            const ctx = Canvas2D._ctx;
-            const pct = this.power / this.maxPower;
-            ctx.fillStyle = "#000";
-            ctx.fillRect(50, 760, 200, 20);
-            ctx.fillStyle = "#0f0";
-            ctx.fillRect(50, 760, 200 * pct, 20);
-            ctx.strokeStyle = "#fff";
-            ctx.strokeRect(50, 760, 200, 20);
-        }
+    ctx.fillStyle = tableLight;
+    ctx.fillRect(0, 0, 1000, 600);
 
-        // floating texts
-        const ctx = Canvas2D._ctx;
-        this.floating.draw(ctx);
+    /* Pockets */
 
-        // ball-in-hand UI
-        if (this.ballInHand) {
-            ctx.fillStyle = "yellow";
-            ctx.font = "24px Arial";
-            ctx.fillText("Place cue ball (click to drop)", 600, 50);
-        }
-
-        // invalid placement visual
-        if (this.invalidPlacementFlash > 0) {
-            ctx.strokeStyle = "red";
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(this.cueBall.position.x, this.cueBall.position.y, this.cueBall.radius + 6, 0, Math.PI * 2);
-            ctx.stroke();
-            this.invalidPlacementFlash--;
-        }
-
-        // HUD (right panel)
-        {
-            const pad = 10;
-            const w = 300;
-            const h = 150;
-            const x = Canvas2D.canvas.width - w - 20;
-            const y = 20;
-
-            ctx.fillStyle = "rgba(0,0,0,0.6)";
-            ctx.fillRect(x, y, w, h);
-            ctx.strokeStyle = "#fff";
-            ctx.strokeRect(x, y, w, h);
-
-            ctx.textAlign = "left";
-            ctx.fillStyle = "#fff";
-            ctx.font = "18px Arial";
-            ctx.fillText(`Mode: ${this.game.mode}`, x + pad, y + 24);
-
-            ctx.fillStyle = this.turns.current === "A" ? "#ff7777" : "#fff";
-            ctx.fillText(`Player A (Red): ${this.scoreRed}/${this.totalRed}`, x + pad, y + 24 + 26);
-
-            ctx.fillStyle = this.turns.current === "B" ? "#ffff77" : "#fff";
-            ctx.fillText(`Player B (Yellow): ${this.scoreYellow}/${this.totalYellow}`, x + pad, y + 24 + 52);
-
-            ctx.fillStyle = "#ffcc00";
-            ctx.font = "16px Arial";
-            ctx.fillText(`Fouls: ${this.foulCount}`, x + pad, y + 24 + 78);
-
-            ctx.fillStyle = "#ccc";
-            ctx.font = "12px Arial";
-            ctx.fillText("Black only after clearing your colors", x + pad, y + h - 12);
-        }
-
-        // game over
-        if (this.gameOver) {
-            ctx.save();
-            ctx.fillStyle = "rgba(0,0,0,0.75)";
-            ctx.fillRect(0, 300, Canvas2D.canvas.width, 200);
-            ctx.fillStyle = "#fff";
-            ctx.font = "42px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(this.gameOver.msg, Canvas2D.canvas.width / 2, 400);
-            ctx.restore();
-        }
+    for (const p of this.pockets) {
+      Canvas2D.drawCircle(p.x, p.y, this.POCKET_RADIUS, "black");
     }
+
+    /* Balls */
+
+for(const ball of this.balls){
+  ball.draw(Canvas2D, this.lamp);
 }
+
+if(this.isCharging){
+
+const ctx = Canvas2D.ctx;
+
+ctx.beginPath();
+ctx.arc(
+this.cueBall.x,
+this.cueBall.y,
+this.cueBall.radius + 6,
+0,
+Math.PI*2
+);
+
+ctx.strokeStyle = "rgba(0,255,180,0.6)";
+ctx.lineWidth = 2;
+
+ctx.stroke();
+
+}
+
+    /* Aim guide */
+
+    this.drawAimGuide(ctx);
+
+    /* Cue stick */
+
+    if (!this.ballsAreMoving()) {
+      const dx = this.mouse.x - this.cueBall.x;
+      const dy = this.mouse.y - this.cueBall.y;
+
+      const angle = Math.atan2(dy, dx);
+
+      const stickLength = 300;
+
+      ctx.save();
+
+      ctx.translate(this.cueBall.x, this.cueBall.y);
+
+      ctx.rotate(angle);
+
+      const pullBack = this.isCharging ? (this.power / this.maxPower) * 40 : 0;
+
+      ctx.drawImage(
+        sprites.spr_stick,
+        -stickLength - 20 - pullBack,
+        -10,
+        stickLength,
+        20,
+      );
+
+      ctx.restore();
+    }
+
+    this.drawPowerMeter(ctx);
+
+    if (this.gameOver) {
+      const ctx = Canvas2D.ctx;
+
+      ctx.fillStyle = "rgba(0,0,0,0.75)";
+      ctx.fillRect(0, 0, 1000, 600);
+
+      ctx.fillStyle = "white";
+      ctx.font = "50px Arial";
+      ctx.textAlign = "center";
+
+      ctx.fillText(this.winner + " Wins!", 500, 300);
+    }
+  }
+
+  shootBall() {
+    const dx = this.mouse.x - this.cueBall.x;
+    const dy = this.mouse.y - this.cueBall.y;
+
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return;
+
+    const nx = dx / length;
+    const ny = dy / length;
+
+    this.cueBall.vx = nx * this.power;
+    this.cueBall.vy = ny * this.power;
+
+    this.playerStats[this.currentPlayer].shots++;
+
+    this.shotInProgress = true;
+    this.ballPocketedThisTurn = false;
+  }
+
+  ballsAreMoving() {
+    for (const ball of this.balls) {
+      if (Math.abs(ball.vx) > 5 || Math.abs(ball.vy) > 5) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  handleBallCollision(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    const minDist = a.radius + b.radius;
+
+    if (distance === 0 || distance >= minDist) return;
+
+    const nx = dx / distance;
+    const ny = dy / distance;
+
+    const overlap = minDist - distance;
+
+    a.x -= (nx * overlap) / 2;
+    a.y -= (ny * overlap) / 2;
+
+    b.x += (nx * overlap) / 2;
+    b.y += (ny * overlap) / 2;
+
+    const rvx = b.vx - a.vx;
+    const rvy = b.vy - a.vy;
+
+    const velAlongNormal = rvx * nx + rvy * ny;
+
+    if (velAlongNormal > 0) return;
+
+    const restitution = 0.93;
+
+    const j = (-(1 + restitution) * velAlongNormal) / 2;
+
+    const impulseX = j * nx;
+    const impulseY = j * ny;
+
+    a.vx -= impulseX;
+    a.vy -= impulseY;
+
+    b.vx += impulseX;
+    b.vy += impulseY;
+  }
+
+  checkPocket(ball) {
+    for (const p of this.pockets) {
+      const dx = ball.x - p.x;
+      const dy = ball.y - p.y;
+
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < this.POCKET_RADIUS) return true;
+    }
+
+    return false;
+  }
+  drawAimGuide(ctx) {
+    if (this.ballsAreMoving()) return;
+
+    const dx = this.mouse.x - this.cueBall.x;
+    const dy = this.mouse.y - this.cueBall.y;
+
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return;
+
+    const nx = dx / length;
+    const ny = dy / length;
+
+    let closestBall = null;
+    let closestDist = Infinity;
+
+    for (const ball of this.balls) {
+      if (ball === this.cueBall) continue;
+
+      const bx = ball.x - this.cueBall.x;
+      const by = ball.y - this.cueBall.y;
+
+      const proj = bx * nx + by * ny;
+
+      if (proj <= 0) continue;
+
+      const closestX = this.cueBall.x + nx * proj;
+      const closestY = this.cueBall.y + ny * proj;
+
+      const dist = Math.sqrt(
+        (ball.x - closestX) ** 2 + (ball.y - closestY) ** 2,
+      );
+
+      if (dist < ball.radius * 1.2 && proj < closestDist) {
+        closestBall = ball;
+        closestDist = proj;
+      }
+    }
+
+    ctx.save();
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+
+    if (closestBall) {
+      const impactX =
+        this.cueBall.x + nx * (closestDist - this.cueBall.radius * 2);
+
+      const impactY =
+        this.cueBall.y + ny * (closestDist - this.cueBall.radius * 2);
+
+      /* cue → ghost ball */
+
+      ctx.beginPath();
+      ctx.moveTo(this.cueBall.x, this.cueBall.y);
+      ctx.lineTo(impactX, impactY);
+      ctx.stroke();
+
+      /* ghost ball */
+
+      ctx.beginPath();
+      ctx.arc(impactX, impactY, this.cueBall.radius, 0, Math.PI * 2);
+
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fill();
+
+      /* target ball direction */
+
+      const tx = closestBall.x - impactX;
+      const ty = closestBall.y - impactY;
+
+      const tLen = Math.sqrt(tx * tx + ty * ty);
+
+      if (tLen > 0) {
+        const tnx = tx / tLen;
+        const tny = ty / tLen;
+
+        ctx.strokeStyle = "rgba(0,255,150,0.9)";
+
+        ctx.beginPath();
+        ctx.moveTo(closestBall.x, closestBall.y);
+
+        ctx.lineTo(closestBall.x + tnx * 200, closestBall.y + tny * 200);
+
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(this.cueBall.x, this.cueBall.y);
+
+      ctx.lineTo(this.cueBall.x + nx * 1000, this.cueBall.y + ny * 1000);
+
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+drawPowerMeter(ctx){
+
+if(!this.isCharging) return;
+
+const meterWidth = 300;
+const meterHeight = 14;
+
+const x = (Canvas2D.canvas.width - meterWidth) / 2;
+const y = Canvas2D.canvas.height - 50;
+
+const powerPercent = this.power / this.maxPower;
+
+/* Background */
+
+ctx.fillStyle = "rgba(255,255,255,0.08)";
+ctx.fillRect(x,y,meterWidth,meterHeight);
+
+/* Power Fill */
+
+const gradient = ctx.createLinearGradient(x,0,x+meterWidth,0);
+
+gradient.addColorStop(0,"#00ff88");
+gradient.addColorStop(0.6,"#ffee00");
+gradient.addColorStop(1,"#ff3b3b");
+
+ctx.fillStyle = gradient;
+
+ctx.fillRect(
+x,
+y,
+meterWidth * powerPercent,
+meterHeight
+);
+
+/* Border */
+
+ctx.strokeStyle = "rgba(255,255,255,0.25)";
+ctx.strokeRect(x,y,meterWidth,meterHeight);
+
+}
+
+}
+
+

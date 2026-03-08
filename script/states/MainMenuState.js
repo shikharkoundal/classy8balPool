@@ -1,75 +1,171 @@
-// script/states/MainMenuState.js
-
-import Canvas2D from "../Canvas2D.js";
+import Canvas2D from "../core/Canvas2D.js";
 import { sprites } from "../Assets.js";
-import Vector2 from "../geom/Vector2.js";
-import Button from "../menu/Button.js";
+import Button from "../core/Button.js";
+import GameplayState from "./GameplayState.js";
 
+
+import MenuBall from "../game/MenuBall.js";
 export default class MainMenuState {
-    constructor(game, gsm) {
-        this.game = game;
-        this.gsm = gsm;
-    }
 
-    onEnter() {
-        console.log("Entered Main Menu");
+  constructor(manager) {
 
-        this.buttons = [
-            new Button(
-                sprites.onePlayersButton,
-                sprites.onePlayersButtonHover,
-                new Vector2(500, 300),
-                () => {
-                    console.log("1 Player (Practice) clicked");
-                    this.game.mode = "practice";
-                    this.gsm.changeState(this.game.gameplayState);
-                }
-            ),
-            new Button(
-                sprites.twoPlayersButton,
-                sprites.twoPlayersButtonHover,
-                new Vector2(500, 450),
-                () => {
-                    console.log("2 Player (Match) clicked");
-                    this.game.mode = "match";
-                    this.gsm.changeState(this.game.gameplayState);
-                }
-            )
-        ];
-    }
-    update(dt) {}
+    this.manager = manager;
 
-    draw() {
-        Canvas2D.clear();
-        Canvas2D.drawImage(sprites.mainMenuBackground, new Vector2(0,0));
+    this.buttons = [];
 
-        for (const btn of this.buttons) btn.draw();
-    }
+    this.mouse = { x:0, y:0 };
+    this.menuBalls = [];
+  }
 
-    handleMouseMove(x, y) {
-        // Button hover handled by Button.isHovered which reads Mouse.position.
-        // But to be safe, we can forward move to each button by simulating Mouse position update.
-        for (const btn of this.buttons) {
-            // nothing needed — Button.isHovered reads global Mouse
+  enter() {
+
+    const canvas = Canvas2D.canvas;
+
+    this.buttons = [
+
+      new Button(
+        350,
+        260,
+        300,
+        80,
+        sprites.onePlayersButton,
+        sprites.onePlayersButtonHover,
+        () => {
+
+          console.log("1 PLAYER CLICKED");
+
+          this.manager.changeState(
+            new GameplayState(this.manager,"ai")
+          );
+
         }
-    }
+      ),
 
-    handleMouseDown() {
-        for (const btn of this.buttons) btn.handleInput();
-    }
+      new Button(
+        350,
+        360,
+        300,
+        80,
+        sprites.twoPlayersButton,
+        sprites.twoPlayersButtonHover,
+        () => {
 
-    handleClick(x, y) {
-        // fallback click handling (not necessary if button handles mousedown)
-        // Retained for compatibility
-        if (x >= 500 && x <= 500 + sprites.onePlayersButton.width &&
-            y >= 300 && y <= 300 + sprites.onePlayersButton.height) {
-            this.game.mode = "practice";
-            this.gsm.changeState(this.game.gameplayState);
+          this.manager.changeState(
+            new GameplayState(this.manager,"pvp")
+          );
+
         }
-        if (x >= 500 && x <= 500 + sprites.twoPlayersButton.width &&
-            y >= 450 && y <= 450 + sprites.twoPlayersButton.height) {
-            this.game.mode = "match";
-            this.gsm.changeState(this.game.gameplayState);
+      )
+    ];
+
+    this.menuBalls = [
+
+  new MenuBall(200,200,25,sprites.spr_red),
+  new MenuBall(700,300,25,sprites.spr_yellow),
+  new MenuBall(500,450,25,sprites.spr_black)
+
+];
+
+    canvas.addEventListener(
+      "mousemove",
+      this.mouseMove = (e)=>{
+
+        const rect = canvas.getBoundingClientRect();
+
+        this.mouse.x = e.clientX - rect.left;
+        this.mouse.y = e.clientY - rect.top;
+
+      }
+    );
+
+    canvas.addEventListener(
+      "mousedown",
+      this.mouseDown = ()=>{
+
+        for (const b of this.buttons) {
+          b.handleClick(this.mouse.x,this.mouse.y);
         }
-    }
+
+      }
+    );
+  }
+
+  exit() {
+
+    const canvas = Canvas2D.canvas;
+
+    canvas.removeEventListener("mousemove",this.mouseMove);
+    canvas.removeEventListener("mousedown",this.mouseDown);
+  }
+
+update(dt) {
+console.log("menu updating");
+  // update button hover
+  for (const b of this.buttons) {
+    b.update(this.mouse.x,this.mouse.y);
+  }
+
+  // animate background balls
+  for (const ball of this.menuBalls) {
+    ball.update(dt);
+  }
+
+}
+
+render() {
+
+  const ctx = Canvas2D.ctx;
+
+  ctx.clearRect(
+    0,
+    0,
+    Canvas2D.canvas.width,
+    Canvas2D.canvas.height
+  );
+
+  /* BACKGROUND */
+
+  if (sprites.mainMenuBackground) {
+
+    ctx.drawImage(
+      sprites.mainMenuBackground,
+      0,
+      0,
+      1000,
+      600
+    );
+
+  } else {
+
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0,0,1000,600);
+
+  }
+
+  /* TITLE */
+
+  ctx.fillStyle = "white";
+  ctx.font = "64px Arial";
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    "POOL MASTER",
+    Canvas2D.canvas.width / 2,
+    160
+  );
+
+  /* BUTTONS */
+
+  for (const b of this.buttons) {
+    b.render(ctx);
+  }
+
+  /* ANIMATED BALLS (draw last so they are visible) */
+
+  for (const ball of this.menuBalls){
+    ball.render();
+  }
+
+}
+
 }

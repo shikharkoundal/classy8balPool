@@ -1,89 +1,53 @@
-const SPRITES = {
-  mainMenuBackground: "main_menu_background.png",
-  background: "spr_background4.png",
+// script/Assets.js
+// import { loadSprites } from "./core/ResourceLoader.js";
+import { loadSprites } from "./core/ResourceLoader.js";
 
-  controls: "controls.png",
-
-  spr_ball: "spr_ball2.png",
-  spr_red: "spr_redBall2.png",
-  spr_yellow: "spr_yellowBall2.png",
-  spr_black: "spr_blackBall2.png",
-  spr_stick: "spr_stick.png",
-
-  // --- MAIN MENU BUTTONS (CORRECT NAMES) ---
-  onePlayersButton: "1_player_button.png",
-  onePlayersButtonHover: "1_player_button_hover.png",
-
-
-twoPlayersButton: "2_players_button.png",          // <-- S added
-twoPlayersButtonHover: "2_players_button_hover.png" // <-- S added
-
-};
-
-
-
-const SOUNDS = {
-  side: "Side.wav",
-  ballsCollide: "BallsCollide.wav",
-  strike: "Strike.wav",
-  hole: "Hole.wav",
-  jazzTune: "Bossa Antigua.mp3"
-};
+// These paths MUST match your actual folder names
+const SPRITE_PATH = "./assets/sprites/";
+const SOUND_PATH  = "./assets/sounds/";
 
 export const sprites = {};
-export const sounds = {};
+export const sounds  = {};
 
-function loadImage(path) {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = rej;
-    img.src = `assets/sprites/${path}`;
-  });
-}
-function loadSound(path) {
-  return new Promise((res, rej) => {
-    const a = new Audio(`assets/sounds/${path}`);
-    a.oncanplaythrough = () => res(a);
-    a.onerror = rej;
-  });
-}
 export async function loadAssets() {
-    const entries = Object.entries(SPRITES);
+    // Load sprites
+    Object.assign(
+        sprites,
+        await loadSprites({
+            // balls
+            spr_ball:      SPRITE_PATH + "spr_ball2.png",
+            spr_red:       SPRITE_PATH + "spr_redBall2.png",
+            spr_yellow:    SPRITE_PATH + "spr_yellowBall2.png",
+            spr_black:     SPRITE_PATH + "spr_blackBall2.png",
 
-    console.log("Loading sprites:", entries);
+            // cue stick
+            spr_stick:     SPRITE_PATH + "spr_stick.png",
 
-    await Promise.all(entries.map(async ([key, file]) => {
-        try {
-            const img = await loadImage(file);
+            // table
+            background:    SPRITE_PATH + "spr_background5.png",
 
-            console.log(`Loaded sprite: ${key}`, img.width, img.height);
+            // menu buttons (optional)
+            onePlayersButton:        SPRITE_PATH + "1_player_button.png",
+            onePlayersButtonHover:   SPRITE_PATH + "1_player_button_hover.png",
+            twoPlayersButton:        SPRITE_PATH + "2_players_button.png",
+            twoPlayersButtonHover:   SPRITE_PATH + "2_players_button_hover.png",
+            mainMenuBackground:      SPRITE_PATH + "main_menu_background.png"
+        })
+    );
 
-            sprites[key] = img;
-        } catch (e) {
-            console.error(`❌ FAILED to load sprite: ${key} → ${file}`, e);
-        }
-    }));
+    // Load sounds (keep simple HTML5 Audio)
+    const soundFiles = {
+        ballsCollide: "BallsCollide.wav",
+        hole:         "Hole.wav",
+        strike:       "Strike.wav",
+        side:         "Side.wav"
+    };
 
-    // Load sounds
-    const snd = Object.entries(SOUNDS);
-    await Promise.all(snd.map(async ([key, file]) => {
-        try {
-            const audio = await loadSound(file);
-            sounds[key] = audio;
-        } catch (e) {
-            console.error(`❌ FAILED sound: ${key} → ${file}`, e);
-        }
-    }));
-
-    // LEGACY NAMES
-    sprites.ball = sprites.spr_ball;
-    sprites.redBall = sprites.spr_red;
-    sprites.yellowBall = sprites.spr_yellow;
-    sprites.blackBall = sprites.spr_black;
-    sprites.stick = sprites.spr_stick;
-    sprites.background = sprites.background;
+    for (const k in soundFiles) {
+        const a = new Audio();
+        a.src = SOUND_PATH + soundFiles[k];
+        sounds[k] = a;
+    }
 
     return true;
 }
-
