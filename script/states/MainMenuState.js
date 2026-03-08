@@ -1,7 +1,7 @@
 import Canvas2D from "../core/Canvas2D.js";
 import { sprites } from "../Assets.js";
 import Button from "../core/Button.js";
-import GameplayState from "./GameplayState.js";
+import GameplayState from "GameplayState.js";
 
 
 import MenuBall from "../game/MenuBall.js";

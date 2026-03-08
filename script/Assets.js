@@ -1,10 +1,10 @@
 // script/Assets.js
 // import { loadSprites } from "./core/ResourceLoader.js";
-import { loadSprites } from "./core/ResourceLoader.js";
+import { loadSprites } from "core/ResourceLoader.js";
 
 // These paths MUST match your actual folder names
-const SPRITE_PATH = "./assets/sprites/";
-const SOUND_PATH  = "./assets/sounds/";
+const SPRITE_PATH = "assets/sprites/";
+const SOUND_PATH  = "assets/sounds/";
 
 export const sprites = {};
 export const sounds  = {};

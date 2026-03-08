@@ -1,5 +1,5 @@
 import Canvas2D from "../core/Canvas2D.js";
-import MainMenuState from "./MainMenuState.js";
+import MainMenuState from "MainMenuState.js";
 
 export default class LaunchState {
 

@@ -1,6 +1,6 @@
 import Canvas2D from "../core/Canvas2D.js";
 import { loadAssets } from "../Assets.js";
-import LaunchState from "./LaunchState.js";
+import LaunchState from "LaunchState.js";
 
 export default class LoadingState {
 
