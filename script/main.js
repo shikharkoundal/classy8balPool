@@ -599,10 +599,10 @@
 
 //   ctx.restore();
 // }
-import Canvas2D from "core/Canvas2D.js";
-import GameLoop from "core/GameLoop.js";
-import GameStateManager from "core/GameStateManager.js";
-import LoadingState from "states/LoadingState.js";
+import Canvas2D from "./core/Canvas2D.js";
+import GameLoop from "./core/GameLoop.js";
+import GameStateManager from "./core/GameStateManager.js";
+import LoadingState from "./states/LoadingState.js";
 
 Canvas2D.init("screen",1000,600);
 
