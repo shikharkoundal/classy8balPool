@@ -1,9 +1,12 @@
+import { sounds } from "../Assets.js";
+
 export default class RulesEngine {
 
 static handlePocket(game, ball){
 
 const current = game.currentPlayer;
 const opponent = current === "A" ? "B" : "A";
+
 
 /* ===== CUE BALL SCRATCH ===== */
 
@@ -16,6 +19,17 @@ ball.y = 300;
 
 ball.vx = 0;
 ball.vy = 0;
+
+game.combo++;
+game.comboTimer = game.comboWindow;
+
+if(game.combo >= 2){
+game.slowMo = 0.4;
+
+setTimeout(()=>{
+game.slowMo = 1;
+},200);
+}
 
 return;
 
@@ -45,7 +59,12 @@ return;
 
 }
 
+//////
+
+
 /* ===== RED / YELLOW ASSIGNMENT ===== */
+sounds.hole.currentTime = 0;
+sounds.hole.play();
 
 if(ball.color === "red" || ball.color === "yellow"){
 

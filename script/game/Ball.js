@@ -27,23 +27,23 @@ export default class Ball {
     // LEFT / RIGHT WALL
     if (this.x - this.radius < table.left) {
       this.x = table.left + this.radius;
-      this.vx *= -1;
+      this.vx *= -0.85;
     }
 
     if (this.x + this.radius > table.right) {
       this.x = table.right - this.radius;
-      this.vx *= -1;
+      this.vx *= -0.85;
     }
 
     // TOP / BOTTOM WALL
     if (this.y - this.radius < table.top) {
       this.y = table.top + this.radius;
-      this.vy *= -1;
+      this.vy *= -0.85;
     }
 
     if (this.y + this.radius > table.bottom) {
       this.y = table.bottom - this.radius;
-      this.vy *= -1;
+      this.vy *= -0.85;
     }
 
     // Apply friction

@@ -3,6 +3,8 @@ import Ball from "../game/Ball.js";
 import { sprites } from "../Assets.js";
 import AI from "../game/AI.js";
 import RulesEngine from "../game/RulesEngine.js";
+import { sounds } from "../Assets.js";
+import HUD from "../game/HUD.js";
 
 export default class GameplayState {
   constructor(manager, mode) {
@@ -59,14 +61,22 @@ export default class GameplayState {
     this.winner = null;
 
     this.lamp = {
-  x: 500,
-  y: 120
-};
+      x: 500,
+      y: 120,
+    };
+    this.cameraShake = 0;
+
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.comboWindow = 2; // seconds
+
+    this.effects = [];
+
+    this.slowMo = 1;
   }
 
   enter() {
-
-  console.log("GAMEPLAY STARTED");
+    console.log("GAMEPLAY STARTED");
 
     const canvas = Canvas2D.canvas;
 
@@ -122,8 +132,11 @@ export default class GameplayState {
       (this.mouseMove = (e) => {
         const rect = canvas.getBoundingClientRect();
 
-        this.mouse.x = e.clientX - rect.left;
-        this.mouse.y = e.clientY - rect.top;
+        const scaleX = Canvas2D.canvas.width / rect.width;
+        const scaleY = Canvas2D.canvas.height / rect.height;
+
+        this.mouse.x = (e.clientX - rect.left) * scaleX;
+        this.mouse.y = (e.clientY - rect.top) * scaleY;
       }),
     );
 
@@ -157,6 +170,7 @@ export default class GameplayState {
   }
 
   update(dt) {
+    dt *= this.slowMo;
     /* Power charging */
 
     if (this.isCharging) {
@@ -215,7 +229,24 @@ export default class GameplayState {
     ) {
       AI.takeShot(this);
     }
+
+    if (this.combo > 0) {
+      this.comboTimer -= dt;
+
+      if (this.comboTimer <= 0) {
+        this.combo = 0;
+      }
+    }
+
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      this.effects[i].life -= dt;
+
+      if (this.effects[i].life <= 0) {
+        this.effects.splice(i, 1);
+      }
+    }
   }
+
   render() {
     const ctx = Canvas2D.ctx;
 
@@ -254,31 +285,52 @@ export default class GameplayState {
       Canvas2D.drawCircle(p.x, p.y, this.POCKET_RADIUS, "black");
     }
 
+    for (const e of this.effects) {
+      const alpha = e.life / 0.3;
+
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 20 * (1 - alpha), 0, Math.PI * 2);
+
+      ctx.fillStyle = "rgba(255,255,255," + alpha + ")";
+      ctx.fill();
+    }
+
     /* Balls */
 
-for(const ball of this.balls){
-  ball.draw(Canvas2D, this.lamp);
-}
+    for (const ball of this.balls) {
+      ball.draw(Canvas2D, this.lamp);
+    }
 
-if(this.isCharging){
+    if (this.isCharging) {
+      const ctx = Canvas2D.ctx;
 
-const ctx = Canvas2D.ctx;
+      // const ctx = Canvas2D.ctx;
 
-ctx.beginPath();
-ctx.arc(
-this.cueBall.x,
-this.cueBall.y,
-this.cueBall.radius + 6,
-0,
-Math.PI*2
-);
+      ctx.save();
 
-ctx.strokeStyle = "rgba(0,255,180,0.6)";
-ctx.lineWidth = 2;
+      if (this.cameraShake > 0) {
+        ctx.translate(
+          (Math.random() - 0.5) * this.cameraShake,
+          (Math.random() - 0.5) * this.cameraShake,
+        );
 
-ctx.stroke();
+        this.cameraShake *= 0.9;
+      }
 
-}
+      ctx.beginPath();
+      ctx.arc(
+        this.cueBall.x,
+        this.cueBall.y,
+        this.cueBall.radius + 6,
+        0,
+        Math.PI * 2,
+      );
+
+      ctx.strokeStyle = "rgba(0,255,180,0.6)";
+      ctx.lineWidth = 2;
+
+      ctx.stroke();
+    }
 
     /* Aim guide */
 
@@ -327,6 +379,16 @@ ctx.stroke();
 
       ctx.fillText(this.winner + " Wins!", 500, 300);
     }
+    ctx.restore();
+    HUD.render(this);
+
+    if (this.combo >= 2) {
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.font = "bold 40px Arial";
+      ctx.textAlign = "center";
+
+      ctx.fillText("COMBO x" + this.combo, 500, 120);
+    }
   }
 
   shootBall() {
@@ -341,6 +403,9 @@ ctx.stroke();
 
     this.cueBall.vx = nx * this.power;
     this.cueBall.vy = ny * this.power;
+
+    sounds.strike.currentTime = 0;
+    sounds.strike.play();
 
     this.playerStats[this.currentPlayer].shots++;
 
@@ -363,41 +428,68 @@ ctx.stroke();
     const dy = b.y - a.y;
 
     const distance = Math.sqrt(dx * dx + dy * dy);
-
     const minDist = a.radius + b.radius;
 
     if (distance === 0 || distance >= minDist) return;
 
+    this.effects.push({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      life: 0.3,
+    });
+
+    /* Collision normal */
+
     const nx = dx / distance;
     const ny = dy / distance;
 
+    /* Separate overlapping balls */
+
     const overlap = minDist - distance;
 
-    a.x -= (nx * overlap) / 2;
-    a.y -= (ny * overlap) / 2;
+    a.x -= nx * overlap * 0.5;
+    a.y -= ny * overlap * 0.5;
 
-    b.x += (nx * overlap) / 2;
-    b.y += (ny * overlap) / 2;
+    b.x += nx * overlap * 0.5;
+    b.y += ny * overlap * 0.5;
+
+    /* Relative velocity */
 
     const rvx = b.vx - a.vx;
     const rvy = b.vy - a.vy;
 
     const velAlongNormal = rvx * nx + rvy * ny;
 
+    /* Prevent jitter */
+
     if (velAlongNormal > 0) return;
 
-    const restitution = 0.93;
+    /* Pool ball restitution */
 
-    const j = (-(1 + restitution) * velAlongNormal) / 2;
+    const restitution = 0.9;
 
-    const impulseX = j * nx;
-    const impulseY = j * ny;
+    /* Impulse */
 
-    a.vx -= impulseX;
-    a.vy -= impulseY;
+    const impulse = (-(1 + restitution) * velAlongNormal) / 2;
 
-    b.vx += impulseX;
-    b.vy += impulseY;
+    const ix = impulse * nx;
+    const iy = impulse * ny;
+
+    a.vx -= ix;
+    a.vy -= iy;
+
+    b.vx += ix;
+    b.vy += iy;
+
+    /* Limit max velocity (important!) */
+
+    const maxSpeed = 3000;
+
+    a.vx = Math.max(-maxSpeed, Math.min(maxSpeed, a.vx));
+    a.vy = Math.max(-maxSpeed, Math.min(maxSpeed, a.vy));
+
+    b.vx = Math.max(-maxSpeed, Math.min(maxSpeed, b.vx));
+    b.vy = Math.max(-maxSpeed, Math.min(maxSpeed, b.vy));
   }
 
   checkPocket(ball) {
@@ -412,6 +504,7 @@ ctx.stroke();
 
     return false;
   }
+
   drawAimGuide(ctx) {
     if (this.ballsAreMoving()) return;
 
@@ -509,47 +602,37 @@ ctx.stroke();
     ctx.restore();
   }
 
-drawPowerMeter(ctx){
+  drawPowerMeter(ctx) {
+    if (!this.isCharging) return;
 
-if(!this.isCharging) return;
+    const meterWidth = 300;
+    const meterHeight = 14;
 
-const meterWidth = 300;
-const meterHeight = 14;
+    const x = (Canvas2D.canvas.width - meterWidth) / 2;
+    const y = Canvas2D.canvas.height - 50;
 
-const x = (Canvas2D.canvas.width - meterWidth) / 2;
-const y = Canvas2D.canvas.height - 50;
+    const powerPercent = this.power / this.maxPower;
 
-const powerPercent = this.power / this.maxPower;
+    /* Background */
 
-/* Background */
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x, y, meterWidth, meterHeight);
 
-ctx.fillStyle = "rgba(255,255,255,0.08)";
-ctx.fillRect(x,y,meterWidth,meterHeight);
+    /* Power Fill */
 
-/* Power Fill */
+    const gradient = ctx.createLinearGradient(x, 0, x + meterWidth, 0);
 
-const gradient = ctx.createLinearGradient(x,0,x+meterWidth,0);
+    gradient.addColorStop(0, "#00ff88");
+    gradient.addColorStop(0.6, "#ffee00");
+    gradient.addColorStop(1, "#ff3b3b");
 
-gradient.addColorStop(0,"#00ff88");
-gradient.addColorStop(0.6,"#ffee00");
-gradient.addColorStop(1,"#ff3b3b");
+    ctx.fillStyle = gradient;
 
-ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, meterWidth * powerPercent, meterHeight);
 
-ctx.fillRect(
-x,
-y,
-meterWidth * powerPercent,
-meterHeight
-);
+    /* Border */
 
-/* Border */
-
-ctx.strokeStyle = "rgba(255,255,255,0.25)";
-ctx.strokeRect(x,y,meterWidth,meterHeight);
-
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.strokeRect(x, y, meterWidth, meterHeight);
+  }
 }
-
-}
-
-

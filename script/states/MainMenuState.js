@@ -80,8 +80,11 @@ export default class MainMenuState {
 
         const rect = canvas.getBoundingClientRect();
 
-        this.mouse.x = e.clientX - rect.left;
-        this.mouse.y = e.clientY - rect.top;
+const scaleX = Canvas2D.canvas.width / rect.width;
+const scaleY = Canvas2D.canvas.height / rect.height;
+
+this.mouse.x = (e.clientX - rect.left) * scaleX;
+this.mouse.y = (e.clientY - rect.top) * scaleY;
 
       }
     );
